@@ -125,6 +125,84 @@ fd_grpc_h2_read_response_hdrs( fd_grpc_resp_hdrs_t *       resp,
   return FD_H2_SUCCESS;
 }
 
+int
+fd_grpc_h2_gen_response_hdrs( fd_h2_rbuf_t * rbuf_tx ) {
+  if( FD_UNLIKELY( !fd_hpack_wr_status( rbuf_tx, 200U ) ) ) return 0;
+  if( FD_UNLIKELY( !fd_hpack_wr_content_type_grpc( rbuf_tx ) ) ) return 0;
+  return 1;
+}
+
+int
+fd_grpc_h2_gen_response_trailers( fd_h2_rbuf_t * rbuf_tx,
+                                  uint           grpc_status,
+                                  char const *   grpc_msg,
+                                  ulong          grpc_msg_len ) {
+  if( FD_UNLIKELY( grpc_status>FD_GRPC_STATUS_UNAUTHENTICATED ) ) grpc_status = FD_GRPC_STATUS_UNKNOWN;
+
+  char  status_buf[ 2 ];
+  ulong status_len;
+  if( FD_LIKELY( grpc_status<10U ) ) {
+    status_buf[ 0 ] = (char)( '0' + grpc_status );
+    status_len = 1UL;
+  } else {
+    status_buf[ 0 ] = (char)( '0' + ( grpc_status/10U ) );
+    status_buf[ 1 ] = (char)( '0' + ( grpc_status%10U ) );
+    status_len = 2UL;
+  }
+
+  if( FD_UNLIKELY( !fd_hpack_wr_private_literal( rbuf_tx, "grpc-status", 11UL, status_buf, status_len ) ) ) return 0;
+  if( grpc_msg && grpc_msg_len ) {
+    if( FD_UNLIKELY( !fd_hpack_wr_private_literal( rbuf_tx, "grpc-message", 12UL, grpc_msg, grpc_msg_len ) ) ) return 0;
+  }
+  return 1;
+}
+
+int
+fd_grpc_h2_read_request_hdrs( fd_grpc_req_hdrs_rx_t *     req,
+                              fd_h2_hdr_matcher_t const * matcher,
+                              uchar const *               payload,
+                              ulong                       payload_sz ) {
+  static FD_TL uchar scratch_buf[ 4096 ];
+
+  fd_hpack_rd_t hpack_rd[1];
+  fd_hpack_rd_init( hpack_rd, payload, payload_sz );
+  while( !fd_hpack_rd_done( hpack_rd ) ) {
+    uchar * scratch = scratch_buf;
+    fd_h2_hdr_t hdr[1];
+    uint err = fd_hpack_rd_next( hpack_rd, hdr, &scratch, scratch_buf+sizeof(scratch_buf) );
+    if( FD_UNLIKELY( err ) ) {
+      FD_LOG_DEBUG(( "Failed to parse request headers (%u-%s)", err, fd_h2_strerror( err ) ));
+      return FD_H2_ERR_PROTOCOL;
+    }
+
+    switch( fd_h2_hdr_match( matcher, hdr->name, hdr->name_len, hdr->hint ) ) {
+    case FD_H2_HDR_PATH:
+      /* Oversize paths are recorded, not rejected here, so the caller
+         can answer with UNIMPLEMENTED rather than a conn error. */
+      if( FD_UNLIKELY( hdr->value_len>=FD_GRPC_PATH_MAX ) ) {
+        req->path_oversz = 1;
+        break;
+      }
+      fd_memcpy( req->path, hdr->value, hdr->value_len );
+      req->path[ hdr->value_len ] = '\0';
+      req->path_len = hdr->value_len;
+      break;
+    case FD_H2_HDR_METHOD:
+      req->is_post = ( hdr->value_len==4UL ) &&
+                     fd_memeq( hdr->value, "POST", 4UL );
+      break;
+    case FD_H2_HDR_CONTENT_TYPE:
+      req->is_grpc_proto =
+        ( ( hdr->value_len==(sizeof("application/grpc")-1UL) &&
+            fd_memeq( hdr->value, "application/grpc", sizeof("application/grpc")-1UL ) ) ||
+          ( hdr->value_len==(sizeof("application/grpc+proto")-1UL) &&
+            fd_memeq( hdr->value, "application/grpc+proto", sizeof("application/grpc+proto")-1UL ) ) );
+      break;
+    }
+  }
+  return FD_H2_SUCCESS;
+}
+
 char const *
 fd_grpc_status_cstr( uint status ) {
   switch( status ) {

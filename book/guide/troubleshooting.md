@@ -23,26 +23,6 @@ the solana submodule _after_ pulling the latest changes. For example:
 ~/firedancer $ git submodule update
 ```
 
-### Specific Errors
-
-* Missing `cargo` binary from rust toolchain
-
-```sh [bash]
-error: the 'cargo' binary, normally provided by the 'cargo' component, is not applicable to the '1.75.0-x86_64-unknown-linux-gnu' toolchain
-+ exec cargo +1.75.0 build --profile=release-with-debug --lib -p agave-validator
-error: the 'cargo' binary, normally provided by the 'cargo' component, is not applicable to the '1.75.0-x86_64-unknown-linux-gnu' toolchain
-make: *** [src/app/fdctl/Local.mk:107: cargo-validator] Error 1
-```
-
-This typically happens due to a race condition between trying to install the
-correct version of the rust toolchain and using it. Separately re-installing
-the toolchain fixes it (replace `1.75.0` with the appropriate version):
-
-```sh [bash]
-rustup toolchain uninstall 1.75.0-x86_64-unknown-linux-gnu
-rustup toolchain install 1.75.0-x86_64-unknown-linux-gnu
-```
-
 ## Configuring
 
 ### General Recommendations

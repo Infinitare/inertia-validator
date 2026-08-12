@@ -1,5 +1,6 @@
 #include "fd_config_private.h"
 #include "../../ballet/toml/fd_toml.h"
+#include "../../util/fd_util.h"
 
 static char const cfg_str_1[] =
   "[gossip]\n"
@@ -8,8 +9,11 @@ static char const cfg_str_1[] =
 static char const cfg_str_2[] =
   "wumbo = \"mini\"";
 
-extern uchar const fdctl_default_config[];
-extern ulong const fdctl_default_config_sz;
+/* Embed the default config directly rather than linking the binary that
+   provides it.  Upstream pulls this symbol in from the Frankendancer
+   library, which this Firedancer-only tree does not build. */
+
+FD_IMPORT_BINARY( fdctl_default_config, "src/app/firedancer/config/default.toml" );
 
 int
 main( int     argc,

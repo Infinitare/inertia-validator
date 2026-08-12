@@ -28,7 +28,7 @@ jobs:
             label: X64
             extras: "rpath handholding"
             deps-extras: "+dev"
-            targets: "all integration-test fdctl firedancer"
+            targets: "all integration-test firedancer"
             compiler: gcc
             compiler-version: 11.4.0
             run-unit-tests: true
@@ -37,7 +37,7 @@ jobs:
             label: icelake
             extras: "asan ubsan rpath handholding"
             deps-extras: "+dev"
-            targets: "all integration-test fdctl firedancer"
+            targets: "all integration-test firedancer"
             compiler: clang
             compiler-version: 19.1.7
             run-unit-tests: true
@@ -46,7 +46,7 @@ jobs:
             label: 512G
             extras: "rpath handholding"
             deps-extras: "+dev"
-            targets: "all integration-test fdctl firedancer"
+            targets: "all integration-test firedancer"
             compiler: gcc
             compiler-version: 12.4.0
             run-unit-tests: true
@@ -67,8 +67,6 @@ jobs:
 
       - uses: actions/checkout@v7
 
-      - uses: ./.github/actions/submodule-init
-
       - uses: ./.github/actions/deps
         with:
           compiler: ${{ matrix.compiler }}
@@ -81,19 +79,9 @@ jobs:
 
       - uses: ./.github/actions/cpusonline
 
-      - uses: dtolnay/rust-toolchain@1.95.0
-        if: ${{ contains(matrix.targets, 'fdctl') }}
-
       - name: clean targets
         run: |
           make clean --silent >/dev/null
-
-      - uses: ./.github/actions/submodule
-        with:
-          machine: ${{ matrix.machine }}
-          compiler: ${{ matrix.compiler }}
-          compiler-version: ${{ matrix.compiler-version }}
-        if: ${{ contains(matrix.targets, 'fdctl') }}
 
       - name: build targets
         run: |

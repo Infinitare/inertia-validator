@@ -173,7 +173,7 @@ firedancer_dev_test_run( int     argc,
       fd_log_thread_set( "supervisor" );
 
       static config_t config[1];
-      fd_config_load( 1, 1, (char const *)firedancer_default_config, firedancer_default_config_sz, NULL, NULL, 0UL, NULL, 0UL, NULL, config, 1 /* dev */ );
+      fd_config_load( 1, (char const *)firedancer_default_config, firedancer_default_config_sz, NULL, NULL, 0UL, NULL, 0UL, NULL, config, 1 /* dev */ );
 
       config->firedancer.accounts.max_accounts  = 30000000UL;
       config->firedancer.runtime.max_live_slots = 512UL;
@@ -181,9 +181,9 @@ firedancer_dev_test_run( int     argc,
       config->development.hugetlbfs.min_size = 0;
       config->has_user_config = 1;
 
+
       fd_topo_initialize( config );
       config->log.log_fd = fd_log_private_logfile_fd();
-      config->frankendancer.consensus.poh_speed_test = 0;
 
       return run( config );
     } else {
@@ -211,7 +211,7 @@ firedancer_dev_test_run( int     argc,
       NULL
     };
 
-    return fd_dev_main( argc, argv, 1, configs, fd_topo_initialize );
+    return fd_dev_main( argc, argv, configs, fd_topo_initialize );
   }
 
   return 0;

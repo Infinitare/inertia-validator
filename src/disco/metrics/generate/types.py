@@ -43,6 +43,7 @@ class Tile(Enum):
     GUI = 38
     METRIC = 39
     RPC = 40
+    GRPC = 41
 
     RESOLH = 100
     BANK = 101

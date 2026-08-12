@@ -7,10 +7,8 @@
      - a synthetic CPU topology  (physical cores × 2 with HT siblings)
      - a tile set                (tile names and counts)
      - a blocklist               (core indices to exclude)
-     - reserve_agave flag        (1 for Frankendancer, 0 for Firedancer)
      - an expected per-CPU array:
          expected[cpu] = tile name   →  tile assigned to that cpu
-         expected[cpu] = _A_         →  cpu reserved for Agave
          expected[cpu] = NULL (__) →  cpu unassigned                   */
 
 #include "fd_topob.h"
@@ -90,7 +88,7 @@ set_blocklist( fd_topo_t *   topo,
 }
 
 /* Build the per-CPU → label map from the layout result.
-   Tiles get their tile name, agave cores get "AGAVE", rest NULL. */
+   Tiles get their tile name, the rest NULL. */
 static void
 build_cpu_map( fd_topo_t const * topo,
                ulong             cpu_cnt,
@@ -99,10 +97,6 @@ build_cpu_map( fd_topo_t const * topo,
   for( ulong i=0UL; i<topo->tile_cnt; i++ ) {
     ulong c = topo->tiles[ i ].cpu_idx;
     if( c != ULONG_MAX && c < cpu_cnt ) out[ c ] = topo->tiles[ i ].name;
-  }
-  for( ulong i=0UL; i<topo->agave_affinity_cnt; i++ ) {
-    ulong c = topo->agave_affinity_cpu_idx[ i ];
-    if( c < cpu_cnt ) out[ c ] = "AGAVE";
   }
 }
 
@@ -120,16 +114,14 @@ print_layout( fd_topo_t const * topo,
 
 /* ---- Test runner ------------------------------------------------------- */
 
-/* Verify the layout of tiles and agave cores matches expected[].
+/* Verify the layout of tiles matches expected[].
    expected[i] = tile name  →  tile should be assigned to cpu i
-   expected[i] = "AGAVE"  →  cpu should be in agave affinity set
    expected[i] = NULL       →  cpu unassigned (blocked / unused)
    Entries beyond expected_len must also be unassigned. */
 static void
 run_test( ulong                 physical_cores,
           tile_spec_t const *   tiles,
           ulong const *         blocklist,      /* ULONG_MAX terminated */
-          int                   reserve_agave,
           ulong                 expected_len,
           char const * const *  expected ) {
   /* Build CPU topology */
@@ -145,9 +137,9 @@ run_test( ulong                 physical_cores,
   set_blocklist( topo, blocklist );
 
   /* Run the layout algorithm */
-  fd_topob_auto_layout_cpus( topo, cpus, reserve_agave );
+  fd_topob_auto_layout_cpus( topo, cpus );
 
-  /* Build actual per-CPU map (tiles + agave) */
+  /* Build actual per-CPU map */
   char const * actual[ 1024 ];
   FD_TEST( cpu_cnt <= 1024UL );
   build_cpu_map( topo, cpu_cnt, actual );
@@ -223,11 +215,10 @@ static tile_spec_t const FRANKENDANCER_TILES[] = {
 /* ======================================================================== */
 /*  Expected results                                                        */
 /*                                                                          */
-/*  For each test, expected[cpu] = tile name, _A_ (Agave), or __ (unused). */
+/*  For each test, expected[cpu] = tile name or __ (unused). */
 /* ======================================================================== */
 
 #define __ NULL
-#define _A_ "AGAVE"
 
 /* ---- Firedancer, skip-HT expected prefix (48/64/128 physical) ----------
    When enough physical cores, ALWAYS tiles on cores 1..21, then
@@ -305,10 +296,6 @@ static char const * const FD_32X2[] = {
 };
 #define FD_32X2_LEN (sizeof(FD_32X2)/sizeof(FD_32X2[0]))
 
-/* ---- Frankendancer 24×2  (no skip HT, 21 ordered tiles from default.toml)
-   Tiles on physical 1-12 and HT 25-29,31-32,34-35.
-   Critical siblings blocked: 30(pack),33(pohh),36(gui).
-   Agave: physical 13-23, HT 37-47.                                       */
 
 static char const * const FRANK_24X2[] = {
   /*  0 */ __,        /*  1 */ "net",     /*  2 */ "verify",  /*  3 */ "verify",
@@ -442,13 +429,12 @@ static char const * const FD_32X2_EXTRA_BL[] = {
 #define FD_32X2_EXTRA_BL_LEN (sizeof(FD_32X2_EXTRA_BL)/sizeof(FD_32X2_EXTRA_BL[0]))
 
 #undef __
-#undef _A_
 
 /* ======================================================================== */
 /*  Test functions                                                          */
 /* ======================================================================== */
 
-/* --- Firedancer (no agave) ---------------------------------------------- */
+/* --- Firedancer ---------------------------------------------- */
 
 FD_UNIT_TEST( test_firedancer_24x2 ) {
   run_test( 24, FIREDANCER_TILES, BLOCKLIST_0H( 24 ), 0, FD_24X2_LEN, FD_24X2 );

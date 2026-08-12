@@ -458,10 +458,12 @@ publish_slot_dead( fd_replay_tile_t *  ctx,
 static void
 publish_txn_executed( fd_replay_tile_t *  ctx,
                       fd_stem_context_t * stem,
-                      ulong               txn_idx ) {
+                      ulong               txn_idx,
+                      ulong               slot ) {
   fd_sched_txn_info_t * txn_info = fd_sched_get_txn_info( ctx->sched, txn_idx );
   fd_replay_txn_executed_t * txn_executed = fd_type_pun( fd_chunk_to_laddr( ctx->replay_out->mem, ctx->replay_out->chunk ) );
   *txn_executed->txn = *fd_sched_get_txn( ctx->sched, txn_idx );
+  txn_executed->slot = slot;
   txn_executed->txn_err = txn_info->txn_err;
   txn_executed->is_committable = !!(txn_info->flags&FD_SCHED_TXN_IS_COMMITTABLE);
   txn_executed->is_fees_only = !!(txn_info->flags&FD_SCHED_TXN_IS_FEES_ONLY);
@@ -955,6 +957,10 @@ try_become_leader( fd_replay_tile_t *  ctx,
 
   msg->total_skipped_ticks = msg->ticks_per_slot*(ctx->next_leader_slot-ctx->reset_slot);
   msg->epoch = fd_slot_to_epoch( &bank->f.epoch_schedule, ctx->next_leader_slot, NULL );
+
+  /* cavey: check if we are leader next slot */
+  fd_pubkey_t const * next_slot_leader = fd_multi_epoch_leaders_get_leader_for_slot( ctx->mleaders, ctx->next_leader_slot+1UL );
+  msg->leader_next_slot = next_slot_leader && !memcmp( next_slot_leader->key, ctx->identity_pubkey->key, 32UL );
 
   fd_cost_tracker_t const * cost_tracker = fd_bank_cost_tracker_query( bank );
 
@@ -2104,7 +2110,7 @@ process_exec_task_done( fd_replay_tile_t *          ctx,
         txn_info->flags  |= fd_ulong_if( msg->txn_exec->is_fees_only,   FD_SCHED_TXN_IS_FEES_ONLY,   0UL );
       }
       if( FD_UNLIKELY( (txn_info->flags&FD_SCHED_TXN_REPLAY_DONE)==FD_SCHED_TXN_REPLAY_DONE ) ) { /* UNLIKELY because generally exec happens before sigverify. */
-        publish_txn_executed( ctx, stem, txn_idx );
+        publish_txn_executed( ctx, stem, txn_idx, bank->f.slot );
       }
       break;
     }
@@ -2127,7 +2133,7 @@ process_exec_task_done( fd_replay_tile_t *          ctx,
       int res = fd_sched_task_done( ctx->sched, FD_SCHED_TT_TXN_SIGVERIFY, txn_idx, exec_tile_idx, NULL );
       FD_TEST( res==0 );
       if( FD_LIKELY( (txn_info->flags&FD_SCHED_TXN_REPLAY_DONE)==FD_SCHED_TXN_REPLAY_DONE ) ) {
-        publish_txn_executed( ctx, stem, txn_idx );
+        publish_txn_executed( ctx, stem, txn_idx, bank->f.slot );
       }
       break;
     }
@@ -2736,7 +2742,7 @@ unprivileged_init( fd_topo_t const *      topo,
              (fd_acct_addr_t const *)tile->replay.bundle.tip_distribution_program_addr,
              (fd_acct_addr_t const *)tile->replay.bundle.tip_payment_program_addr,
              (fd_acct_addr_t const *)ctx->bundle.vote_account.uc,
-             (fd_acct_addr_t const *)ctx->bundle.vote_account.uc, "NAN", 0UL ) ) ) {
+             (fd_acct_addr_t const *)ctx->bundle.vote_account.uc, 0UL ) ) ) {
       FD_LOG_ERR(( "failed to initialize bundle crank gen" ));
     }
   }

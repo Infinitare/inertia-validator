@@ -2,7 +2,7 @@
 # https://github.com/rui314/mold
 #
 # This linker is usually much faster than the default linker when working
-# with large binaries (Rust projects, fdctl, etc.)
+# with large binaries (firedancer, firedancer-dev, etc.)
 
 MOLD_LDFLAGS=-fuse-ld=mold
 

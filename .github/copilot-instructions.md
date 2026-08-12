@@ -135,7 +135,7 @@ fd_rng_seq_set( fd_rng_t * rng,
 
 1. **Performance First**: Low-latency design patterns, minimal allocations
 2. **Security**: Strict sandboxing, minimal syscalls, extensive fuzzing
-3. **Independence**: No dependencies on Agave code (for full Firedancer build)
+3. **Independence**: No dependencies on Agave code
 4. **Readability**: Consistent style, vertical alignment, clear documentation
 
 ## Additional Resources

@@ -166,6 +166,7 @@ typedef struct fd_replay_root_advanced fd_replay_root_advanced_t;
 
 struct fd_replay_txn_executed {
   fd_txn_p_t txn[ 1 ];
+  ulong slot;
   int is_committable;
   int is_fees_only;
   int txn_err;

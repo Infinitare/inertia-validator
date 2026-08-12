@@ -12,17 +12,10 @@ highly restrictive sandbox and almost no system calls.
 diversity to the Solana network and helps it stay resilient to supply
 chain attacks in build tooling or dependencies.
 
-## Documentation
-If you are an operator or looking to run the validator, see the Getting
-Started guide in the [Firedancer
-docs](https://docs.firedancer.io/)
+## About this fork
 
-## Releases
-If you are an operator looking to run the validator, see the [Releases
-Guide](https://docs.firedancer.io/guide/getting-started.html#releases)
-in the documentation.
-
-The Firedancer project is producing two validators,
+This is a **Firedancer-only** fork.  Upstream builds two validators from
+one codebase:
 
 * **Frankendancer** A hybrid validator using parts of Firedancer and
 parts of Agave. Frankendancer uses the Firedancer networking stack and
@@ -31,39 +24,49 @@ functionality including execution and consensus is using the Agave
 validator code.
 * **Firedancer** A full from-scratch Firedancer with no Agave code.
 
-Both validators are built from this codebase. The Firedancer validator
-is not ready for test or production use and has no releases.
-Frankendancer is currently available on both Solana testnet and
-mainnet-beta.
+This tree carries only the second.  The Agave submodule, `fdctl`,
+`fddev` and the `src/discoh` tiles are stripped out, so there is no Rust
+in the build and no submodule to initialise.
+
+Upstream is still tracked, and merging from it is scripted.  See
+[contrib/harmonic/README.md](contrib/harmonic/README.md) for how to pull
+upstream changes and re-apply the strip.
+
+## Documentation
+If you are an operator or looking to run the validator, see the Getting
+Started guide in the [Firedancer
+docs](https://docs.firedancer.io/)
+
+Note that much of the upstream operator documentation under `book/` is
+written against Frankendancer's `fdctl` binary. It is kept as upstream
+wrote it so that documentation merges stay clean; read it with the
+Firedancer equivalents (`firedancer`, `firedancer-dev`) in mind.
 
 ## Developing
-Firedancer currently only supports Linux and requires a relatively new
+Firedancer only supports Linux on x86-64 and requires a relatively new
 kernel, at least v4.18 to build.
 
 ```console
-$ git clone https://github.com/firedancer-io/firedancer.git
-$ cd firedancer
-$ ./deps.sh
-$ source activate  # enter build environment
-$ make -j
-
-# Run a new development cluster
-$ firedancer-dev
-
-# Join Solana testnet
-$ firedancer-dev --testnet
+$ git clone <this-repo>
+$ cd inertia-validator
+$ ./deps.sh +dev
+$ make -j firedancer-dev
 ```
 
-`firedancer-dev` (without args) configures your system for validator
-operation and creates a new lcoal development cluster. First it creates
-a genesis block, some keys, a faucet, and then it starts a validator on
-the local machine. `firedancer-dev` will use `sudo` to make privileged
-changes to system configuration where needed. If `sudo` is not available,
-you may need to run the command as root.
+Note there is no `--recurse-submodules`: this fork has no submodules.
 
-If you wish to join this cluster with other validators, you can define
-`[gossip.entrypoints]` in the configuration file to point at your first
-validator and join with `firedancer-dev run`.
+To run a local development cluster:
+
+```console
+$ sudo ./build/native/gcc/bin/firedancer-dev dev
+```
+
+This development command will ensure your system is configured correctly
+before creating a genesis block, some keys, a faucet, and then starting a
+validator on the local machine. It makes privileged changes to system
+configuration, so it needs `sudo` or root.
+
+The production binary is built with `make -j firedancer`.
 
 ## License
 Firedancer is available under the [Apache 2

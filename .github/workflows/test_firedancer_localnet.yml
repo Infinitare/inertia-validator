@@ -19,8 +19,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: ./.github/actions/submodule-init
-
       - uses: ./.github/actions/deps
         with:
           extras: +dev
@@ -28,7 +26,7 @@ jobs:
       - uses: ./.github/actions/hugepages
         with:
           count_gigantic: 200
-          count_huge: 1000 # TODO: this is required until we can handle anonymous workspaces and loose huge pages in fddev
+          count_huge: 1000 # TODO: this is required until we can handle anonymous workspaces and loose huge pages
 
       - name: build
         run: |
@@ -56,7 +54,6 @@ jobs:
           sudo killall -9 -q solana-validator || true
           sudo killall -9 -q agave-validator || true
           sudo killall -9 -q firedancer-dev || true
-          sudo killall -9 -q fddev || true
 
       - name: remove ledger and cluster artifacts if they exist
         run: |
@@ -170,7 +167,6 @@ jobs:
           sudo killall -9 -q solana-validator || true
           sudo killall -9 -q agave-validator || true
           sudo killall -9 -q firedancer-dev || true
-          sudo killall -9 -q fddev || true
           sudo rm -rf ../*.so
           sudo rm -rf ../test-ledger
           sudo rm -rf setup_fd_cluster.log
