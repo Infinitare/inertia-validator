@@ -1174,6 +1174,9 @@ fd_bundle_client_grpc_rx_end(
     FD_LOG_INFO(( "SubscribeBundles stream failed (gRPC status %u-%s). Reconnecting ...",
                   resp->grpc_status, fd_grpc_status_cstr( resp->grpc_status ) ));
     return;
+  case FD_BUNDLE_CLIENT_REQ_Bundle_GetBlockBuilderFeeInfo:
+    ctx->builder_info_wait = 0;
+    break;
   case FD_BUNDLE_CLIENT_REQ_SubmitLeaderWindowInfo:
     ctx->submit_leader_window_info_wait = 0;
     break;
