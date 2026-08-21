@@ -186,23 +186,6 @@ static tile_spec_t const FIREDANCER_TILES[] = {
   { NULL, 0 }
 };
 
-/* --- Frankendancer default (from default.toml) ---------------------------
-   net=1, quic=1, verify=6, resolh=1, bank=4, shred=1
-   Fixed: dedup=1, pack=1, pohh=1, store=1, sign=1, plugin=1, gui=1
-   Total ordered tiles: 21                                               */
-
-static tile_spec_t const FRANKENDANCER_TILES[] = {
-  /* floating tiles */
-  { "netlnk", 1 },
-  { "metric", 1 }, { "diag",   1 },
-  /* ordered tiles (21) */
-  { "net",    1 }, { "quic",   1 }, { "verify", 6 }, { "dedup",  1 },
-  { "resolh", 1 }, { "pack",   1 }, { "bank",   4 }, { "pohh",   1 },
-  { "shred",  1 }, { "store",  1 }, { "sign",   1 }, { "plugin", 1 },
-  { "guih",   1 },
-  { NULL, 0 }
-};
-
 /* ======================================================================== */
 /*  Blocklists                                                              */
 /* ======================================================================== */
@@ -238,21 +221,6 @@ static char const * const FD_SKIP_HT[] = {
   /* 36 */ "txsend",
 };
 #define FD_SKIP_HT_LEN (sizeof(FD_SKIP_HT)/sizeof(FD_SKIP_HT[0]))
-
-/* ---- Frankendancer, skip-HT tile prefix (shared by 48/64/128) ----------
-   Tiles on physical cores 1-21, core 0 blocked.
-   Used as prefix; each test adds _A_ for the agave region.               */
-
-static char const * const FRANK_SKIP_HT_PREFIX[] = {
-  /* phys cores 0-21 */
-  /*  0 */ __,        /*  1 */ "net",     /*  2 */ "quic",    /*  3 */ "verify",
-  /*  4 */ "verify",  /*  5 */ "verify",  /*  6 */ "verify",  /*  7 */ "verify",
-  /*  8 */ "verify",  /*  9 */ "dedup",   /* 10 */ "resolh",  /* 11 */ "pack",
-  /* 12 */ "bank",    /* 13 */ "bank",    /* 14 */ "bank",    /* 15 */ "bank",
-  /* 16 */ "pohh",    /* 17 */ "sign",    /* 18 */ "shred",   /* 19 */ "store",
-  /* 20 */ "plugin",  /* 21 */ "guih",
-};
-#define FRANK_SKIP_HT_PREFIX_LEN (sizeof(FRANK_SKIP_HT_PREFIX)/sizeof(FRANK_SKIP_HT_PREFIX[0]))
 
 /* ---- Firedancer 24×2  (no skip HT, 36 tiles > 23 physical cores) ------ */
 
@@ -297,48 +265,6 @@ static char const * const FD_32X2[] = {
 #define FD_32X2_LEN (sizeof(FD_32X2)/sizeof(FD_32X2[0]))
 
 
-static char const * const FRANK_24X2[] = {
-  /*  0 */ __,        /*  1 */ "net",     /*  2 */ "verify",  /*  3 */ "verify",
-  /*  4 */ "verify",  /*  5 */ "dedup",   /*  6 */ "pack",    /*  7 */ "bank",
-  /*  8 */ "bank",    /*  9 */ "pohh",    /* 10 */ "sign",    /* 11 */ "store",
-  /* 12 */ "guih",    /* 13 */ _A_,       /* 14 */ _A_,       /* 15 */ _A_,
-  /* 16 */ _A_,       /* 17 */ _A_,       /* 18 */ _A_,       /* 19 */ _A_,
-  /* 20 */ _A_,       /* 21 */ _A_,       /* 22 */ _A_,       /* 23 */ _A_,
-  /* --- HT siblings (24-47) --- */
-  /* 24 */ __,        /* 25 */ "quic",    /* 26 */ "verify",  /* 27 */ "verify",
-  /* 28 */ "verify",  /* 29 */ "resolh",  /* 30 */ __,        /* 31 */ "bank",
-  /* 32 */ "bank",    /* 33 */ __,        /* 34 */ "shred",   /* 35 */ "plugin",
-  /* 36 */ __,        /* 37 */ _A_,       /* 38 */ _A_,       /* 39 */ _A_,
-  /* 40 */ _A_,       /* 41 */ _A_,       /* 42 */ _A_,       /* 43 */ _A_,
-  /* 44 */ _A_,       /* 45 */ _A_,       /* 46 */ _A_,       /* 47 */ _A_,
-};
-#define FRANK_24X2_LEN (sizeof(FRANK_24X2)/sizeof(FRANK_24X2[0]))
-
-/* ---- Frankendancer 32×2  (no skip HT, 21 ordered tiles from default.toml)
-   Tiles on physical 1-12 and HT 33-37,39-40,42-43.
-   Critical siblings blocked: 38(pack),41(pohh),44(gui).
-   Agave: physical 13-31, HT 45-63.                                       */
-
-static char const * const FRANK_32X2[] = {
-  /*  0 */ __,        /*  1 */ "net",     /*  2 */ "verify",  /*  3 */ "verify",
-  /*  4 */ "verify",  /*  5 */ "dedup",   /*  6 */ "pack",    /*  7 */ "bank",
-  /*  8 */ "bank",    /*  9 */ "pohh",    /* 10 */ "sign",    /* 11 */ "store",
-  /* 12 */ "guih",    /* 13 */ _A_,       /* 14 */ _A_,       /* 15 */ _A_,
-  /* 16 */ _A_,       /* 17 */ _A_,       /* 18 */ _A_,       /* 19 */ _A_,
-  /* 20 */ _A_,       /* 21 */ _A_,       /* 22 */ _A_,       /* 23 */ _A_,
-  /* 24 */ _A_,       /* 25 */ _A_,       /* 26 */ _A_,       /* 27 */ _A_,
-  /* 28 */ _A_,       /* 29 */ _A_,       /* 30 */ _A_,       /* 31 */ _A_,
-  /* --- HT siblings (32-63) --- */
-  /* 32 */ __,        /* 33 */ "quic",    /* 34 */ "verify",  /* 35 */ "verify",
-  /* 36 */ "verify",  /* 37 */ "resolh",  /* 38 */ __,        /* 39 */ "bank",
-  /* 40 */ "bank",    /* 41 */ __,        /* 42 */ "shred",   /* 43 */ "plugin",
-  /* 44 */ __,        /* 45 */ _A_,       /* 46 */ _A_,       /* 47 */ _A_,
-  /* 48 */ _A_,       /* 49 */ _A_,       /* 50 */ _A_,       /* 51 */ _A_,
-  /* 52 */ _A_,       /* 53 */ _A_,       /* 54 */ _A_,       /* 55 */ _A_,
-  /* 56 */ _A_,       /* 57 */ _A_,       /* 58 */ _A_,       /* 59 */ _A_,
-  /* 60 */ _A_,       /* 61 */ _A_,       /* 62 */ _A_,       /* 63 */ _A_,
-};
-#define FRANK_32X2_LEN (sizeof(FRANK_32X2)/sizeof(FRANK_32X2[0]))
 
 /* ---- Variation: Firedancer 32×2, fewer tiles → skip HT -----------------
    verify=2, execrp=4  →  26 tiles total, 31 available ≥ 26              */
@@ -367,42 +293,6 @@ static char const * const FD_32X2_FEWER[] = {
 };
 #define FD_32X2_FEWER_LEN (sizeof(FD_32X2_FEWER)/sizeof(FD_32X2_FEWER[0]))
 
-/* ---- Variation: Frankendancer 32×2, more bank tiles → still no skip HT --
-   bank=4, verify=6  →  23 ordered tiles, 2×23=46 > 31
-   Tiles on physical 1-13 and HT 33-38,40-41,43-44.
-   Critical siblings blocked: 39(pack),42(pohh),45(gui).
-   Agave: physical 14-31, HT 46-63.                                       */
-
-static tile_spec_t const FRANK_MORE_BANK[] = {
-  { "netlnk", 1 },
-  { "metric", 1 }, { "diag",   1 },
-  { "net",    2 }, { "quic",   1 }, { "verify", 6 }, { "dedup",  1 },
-  { "resolh", 1 }, { "pack",   1 }, { "bank",   4 }, { "pohh",   1 },
-  { "shred",  2 }, { "store",  1 }, { "sign",   1 }, { "plugin", 1 },
-  { "guih",   1 },
-  { NULL, 0 }
-};
-
-static char const * const FRANK_32X2_MORE_BANK[] = {
-  /*  0 */ __,        /*  1 */ "net",     /*  2 */ "quic",    /*  3 */ "verify",
-  /*  4 */ "verify",  /*  5 */ "verify",  /*  6 */ "resolh",  /*  7 */ "pack",
-  /*  8 */ "bank",    /*  9 */ "bank",    /* 10 */ "pohh",    /* 11 */ "shred",
-  /* 12 */ "store",   /* 13 */ "guih",    /* 14 */ _A_,       /* 15 */ _A_,
-  /* 16 */ _A_,       /* 17 */ _A_,       /* 18 */ _A_,       /* 19 */ _A_,
-  /* 20 */ _A_,       /* 21 */ _A_,       /* 22 */ _A_,       /* 23 */ _A_,
-  /* 24 */ _A_,       /* 25 */ _A_,       /* 26 */ _A_,       /* 27 */ _A_,
-  /* 28 */ _A_,       /* 29 */ _A_,       /* 30 */ _A_,       /* 31 */ _A_,
-  /* --- HT siblings (32-63) --- */
-  /* 32 */ __,        /* 33 */ "net",     /* 34 */ "verify",  /* 35 */ "verify",
-  /* 36 */ "verify",  /* 37 */ "dedup",   /* 38 */ "bank",    /* 39 */ __,
-  /* 40 */ "bank",    /* 41 */ "sign",    /* 42 */ __,        /* 43 */ "shred",
-  /* 44 */ "plugin",  /* 45 */ __,        /* 46 */ _A_,       /* 47 */ _A_,
-  /* 48 */ _A_,       /* 49 */ _A_,       /* 50 */ _A_,       /* 51 */ _A_,
-  /* 52 */ _A_,       /* 53 */ _A_,       /* 54 */ _A_,       /* 55 */ _A_,
-  /* 56 */ _A_,       /* 57 */ _A_,       /* 58 */ _A_,       /* 59 */ _A_,
-  /* 60 */ _A_,       /* 61 */ _A_,       /* 62 */ _A_,       /* 63 */ _A_,
-};
-#define FRANK_32X2_MORE_BANK_LEN (sizeof(FRANK_32X2_MORE_BANK)/sizeof(FRANK_32X2_MORE_BANK[0]))
 
 /* ---- Variation: Firedancer 32×2, extra blocklist -----------------------
    blocklist = "0h,5h" → {0,32,5,37}. 29 phys avail. 36 tiles > 29.     */
@@ -437,80 +327,35 @@ static char const * const FD_32X2_EXTRA_BL[] = {
 /* --- Firedancer ---------------------------------------------- */
 
 FD_UNIT_TEST( test_firedancer_24x2 ) {
-  run_test( 24, FIREDANCER_TILES, BLOCKLIST_0H( 24 ), 0, FD_24X2_LEN, FD_24X2 );
+  run_test( 24, FIREDANCER_TILES, BLOCKLIST_0H( 24 ), FD_24X2_LEN, FD_24X2 );
 }
 
 FD_UNIT_TEST( test_firedancer_32x2 ) {
-  run_test( 32, FIREDANCER_TILES, BLOCKLIST_0H( 32 ), 0, FD_32X2_LEN, FD_32X2 );
+  run_test( 32, FIREDANCER_TILES, BLOCKLIST_0H( 32 ), FD_32X2_LEN, FD_32X2 );
 }
 
 FD_UNIT_TEST( test_firedancer_48x2 ) {
-  run_test( 48, FIREDANCER_TILES, BLOCKLIST_0H( 48 ), 0, FD_SKIP_HT_LEN, FD_SKIP_HT );
+  run_test( 48, FIREDANCER_TILES, BLOCKLIST_0H( 48 ), FD_SKIP_HT_LEN, FD_SKIP_HT );
 }
 
 FD_UNIT_TEST( test_firedancer_64x2 ) {
-  run_test( 64, FIREDANCER_TILES, BLOCKLIST_0H( 64 ), 0, FD_SKIP_HT_LEN, FD_SKIP_HT );
+  run_test( 64, FIREDANCER_TILES, BLOCKLIST_0H( 64 ), FD_SKIP_HT_LEN, FD_SKIP_HT );
 }
 
 FD_UNIT_TEST( test_firedancer_128x2 ) {
-  run_test( 128, FIREDANCER_TILES, BLOCKLIST_0H( 128 ), 0, FD_SKIP_HT_LEN, FD_SKIP_HT );
-}
-
-/* --- Frankendancer (with agave visible in expected arrays) -------------- */
-
-FD_UNIT_TEST( test_frankendancer_24x2 ) {
-  run_test( 24, FRANKENDANCER_TILES, BLOCKLIST_0H( 24 ), 1,
-            FRANK_24X2_LEN, FRANK_24X2 );
-}
-
-FD_UNIT_TEST( test_frankendancer_32x2 ) {
-  run_test( 32, FRANKENDANCER_TILES, BLOCKLIST_0H( 32 ), 1,
-            FRANK_32X2_LEN, FRANK_32X2 );
-}
-
-/* For skip-HT Frankendancer (48/64/128): build the full expected array
-   from the shared tile prefix, then mark agave regions with AGAVE.
-   Tiles on physical 1-21, agave on physical 22..N-1 and HT N+22..2N-1. */
-
-FD_UNIT_TEST( test_frankendancer_48x2 ) {
-  char const * expected[96] = {0};
-  for( ulong i=0UL; i<FRANK_SKIP_HT_PREFIX_LEN; i++ ) expected[i] = FRANK_SKIP_HT_PREFIX[i];
-  for( ulong i=22; i<48;  i++ ) expected[i] = "AGAVE";  /* phys agave  */
-  for( ulong i=70; i<96;  i++ ) expected[i] = "AGAVE";  /* HT agave    */
-  run_test( 48, FRANKENDANCER_TILES, BLOCKLIST_0H( 48 ), 1, 96, expected );
-}
-
-FD_UNIT_TEST( test_frankendancer_64x2 ) {
-  char const * expected[128] = {0};
-  for( ulong i=0UL; i<FRANK_SKIP_HT_PREFIX_LEN; i++ ) expected[i] = FRANK_SKIP_HT_PREFIX[i];
-  for( ulong i=22; i<64;   i++ ) expected[i] = "AGAVE";  /* phys agave */
-  for( ulong i=86; i<128;  i++ ) expected[i] = "AGAVE";  /* HT agave   */
-  run_test( 64, FRANKENDANCER_TILES, BLOCKLIST_0H( 64 ), 1, 128, expected );
-}
-
-FD_UNIT_TEST( test_frankendancer_128x2 ) {
-  char const * expected[256] = {0};
-  for( ulong i=0UL; i<FRANK_SKIP_HT_PREFIX_LEN; i++ ) expected[i] = FRANK_SKIP_HT_PREFIX[i];
-  for( ulong i=22;  i<128; i++ ) expected[i] = "AGAVE";  /* phys agave */
-  for( ulong i=150; i<256; i++ ) expected[i] = "AGAVE";  /* HT agave   */
-  run_test( 128, FRANKENDANCER_TILES, BLOCKLIST_0H( 128 ), 1, 256, expected );
+  run_test( 128, FIREDANCER_TILES, BLOCKLIST_0H( 128 ), FD_SKIP_HT_LEN, FD_SKIP_HT );
 }
 
 /* --- Variations on 32×2 ------------------------------------------------ */
 
 FD_UNIT_TEST( test_firedancer_32x2_fewer_tiles ) {
-  run_test( 32, FD_FEWER_TILES, BLOCKLIST_0H( 32 ), 0,
+  run_test( 32, FD_FEWER_TILES, BLOCKLIST_0H( 32 ),
             FD_32X2_FEWER_LEN, FD_32X2_FEWER );
-}
-
-FD_UNIT_TEST( test_frankendancer_32x2_more_bank ) {
-  run_test( 32, FRANK_MORE_BANK, BLOCKLIST_0H( 32 ), 1,
-            FRANK_32X2_MORE_BANK_LEN, FRANK_32X2_MORE_BANK );
 }
 
 FD_UNIT_TEST( test_firedancer_32x2_extra_blocklist ) {
   run_test( 32, FIREDANCER_TILES, (ulong[]){ 0, 32, 5, 37, ULONG_MAX },
-            0, FD_32X2_EXTRA_BL_LEN, FD_32X2_EXTRA_BL );
+            FD_32X2_EXTRA_BL_LEN, FD_32X2_EXTRA_BL );
 }
 
 static fd_topo_tile_t *
