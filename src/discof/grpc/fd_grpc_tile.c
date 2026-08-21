@@ -1,7 +1,7 @@
 #include "proto/stream.pb.h"
 #include "../replay/fd_replay_tile.h"
 
-#include "../../ballet/nanopb/pb_decode.h"
+#include "../../third_party/nanopb/pb_decode.h"
 #include "../../ballet/pb/fd_pb_encode.h"
 #include "../../disco/metrics/fd_metrics.h"
 #include "../../disco/topo/fd_topo.h"

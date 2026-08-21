@@ -89,7 +89,7 @@ main( int     argc,
       continue;
     }
     /* Alternate success and failure so include_failed is exercised. */
-    execs[ txn_cnt ].txn_err = ( txn_cnt & 1UL ) ? FD_RUNTIME_TXN_ERR_ACCOUNT_IN_USE : 0;
+    execs[ txn_cnt ].txn_err = ( txn_cnt & 1UL ) ? FD_RUNTIME_TXN_ERR_ACCOUNT_LOADED_TWICE : 0;
     txn_cnt++;
   }
   FD_TEST( txn_cnt );
