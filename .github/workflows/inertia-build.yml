@@ -122,6 +122,27 @@ jobs:
             > normal-page-tests.txt
           echo "skipping $(wc -l < needs-gigantic.txt), running $(wc -l < normal-page-tests.txt)"
 
+      # run_unit_tests.sh budgets normal pages from MemFree, which
+      # excludes reclaimable page cache -- after `make all` that reads as
+      # a few hundred MiB, less than the 1 GiB a single job reserves, and
+      # the scheduler then admits no test at all.  Drop the cache so
+      # MemFree reflects what is actually available.
+      # The scheduler has no guard for this -- its own check compares
+      # against the gigantic-page table -- and simply never dispatches,
+      # so assert here rather than let the job sit until it times out.
+      - name: Reclaim page cache
+        run: |
+          sync
+          sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches'
+          free -m
+          free_pages=$(( $(awk '/^MemFree:/{print $2}' /proc/meminfo) / 4 ))
+          need=$(( 262144 * 2 ))
+          echo "free normal pages: $free_pages, needed for 2 jobs: $need"
+          if [ "$free_pages" -lt "$need" ]; then
+            echo "not enough free memory to admit a single test job" >&2
+            exit 1
+          fi
+
       # -j 2 rather than one job per CPU: each job takes its 1 GiB
       # workspace as ordinary anonymous memory.
       - name: Run unit tests
