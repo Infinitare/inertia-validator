@@ -17,12 +17,8 @@
 /* Scheduling strategy the block engine runs for this validator session. */
 typedef enum _block_engine_SchedulingStrategy {
     block_engine_SchedulingStrategy_SCHEDULING_STRATEGY_UNSPECIFIED = 0,
-    /* First-in, first-out continuous availability sequencing. */
-    block_engine_SchedulingStrategy_SCHEDULING_STRATEGY_FIFO = 1,
     /* Frequent batch auction: discrete batches ordered by priority fees and tips. */
-    block_engine_SchedulingStrategy_SCHEDULING_STRATEGY_FBA = 2,
-    /* Maximum revenue strategy: continuous streaming with revenue-prioritizing selection. */
-    block_engine_SchedulingStrategy_SCHEDULING_STRATEGY_MREV = 3
+    block_engine_SchedulingStrategy_SCHEDULING_STRATEGY_FBA = 2
 } block_engine_SchedulingStrategy;
 
 /* Struct definitions */
@@ -81,8 +77,8 @@ extern "C" {
 
 /* Helper constants for enums */
 #define _block_engine_SchedulingStrategy_MIN block_engine_SchedulingStrategy_SCHEDULING_STRATEGY_UNSPECIFIED
-#define _block_engine_SchedulingStrategy_MAX block_engine_SchedulingStrategy_SCHEDULING_STRATEGY_MREV
-#define _block_engine_SchedulingStrategy_ARRAYSIZE ((block_engine_SchedulingStrategy)(block_engine_SchedulingStrategy_SCHEDULING_STRATEGY_MREV+1))
+#define _block_engine_SchedulingStrategy_MAX block_engine_SchedulingStrategy_SCHEDULING_STRATEGY_FBA
+#define _block_engine_SchedulingStrategy_ARRAYSIZE ((block_engine_SchedulingStrategy)(block_engine_SchedulingStrategy_SCHEDULING_STRATEGY_FBA+1))
 
 
 

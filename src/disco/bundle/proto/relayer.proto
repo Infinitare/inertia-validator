@@ -3,7 +3,7 @@ syntax = "proto3";
 import "packet.proto";
 import "shared.proto";
 
-package tpu;
+package relayer;
 
 message GetTpuConfigsRequest {}
 message GetTpuConfigsResponse {

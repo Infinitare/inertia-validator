@@ -194,20 +194,20 @@ test_bundle_env_mock_conn( test_bundle_env_t * env ) {
    as bundles, this just sets the flag.  The wksp parameter is kept for
    backwards compatibility but is not used. */
 FD_FN_UNUSED static void
-test_bundle_env_enable_harmonic_block_mode( test_bundle_env_t * env,
+test_bundle_env_enable_inertia_block_mode( test_bundle_env_t * env,
                                             fd_wksp_t *         wksp ) {
   (void)wksp;
   fd_bundle_tile_t * ctx = env->state;
-  ctx->harmonic_block_mode = 1;
+  ctx->inertia_block_mode = 1;
 }
 
-/* Mock the harmonic block stream being active.
-   Uses the main grpc_client since blocks share the bundle connection. */
+/* Mock the harmonic block stream being active.  Blocks arrive on the
+   bundle stream, so this is the bundle subscription. */
 FD_FN_UNUSED static void
 test_bundle_env_mock_harmonic_block_stream( fd_bundle_tile_t * ctx ) {
-  ctx->harmonic_block_subscription_live = 1;
+  ctx->bundle_subscription_live = 1;
 
-  fd_grpc_h2_stream_t * stream = fd_grpc_client_stream_acquire( ctx->grpc_client, FD_BUNDLE_CLIENT_REQ_SubscribeBlocks );
+  fd_grpc_h2_stream_t * stream = fd_grpc_client_stream_acquire( ctx->grpc_client, FD_BUNDLE_CLIENT_REQ_Bundle_SubscribeBundles );
   FD_TEST( stream );
   stream->hdrs.h2_status     = 200;
   stream->hdrs.is_grpc_proto = 1;

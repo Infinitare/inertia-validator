@@ -290,10 +290,8 @@ fd_config_fill( fd_config_t * config,
   }
   else FD_LOG_ERR(( "[tiles.pack.schedule_strategy] %s not recognized", config->tiles.pack.schedule_strategy ));
 
-  if(      FD_LIKELY( !strcmp( config->tiles.bundle.strategy, "fba"  ) ) ) config->tiles.bundle.strategy_enum = block_engine_SchedulingStrategy_SCHEDULING_STRATEGY_FBA;
-  else if( FD_LIKELY( !strcmp( config->tiles.bundle.strategy, "mrev" ) ) ) config->tiles.bundle.strategy_enum = block_engine_SchedulingStrategy_SCHEDULING_STRATEGY_MREV;
-  else if( FD_LIKELY( !strcmp( config->tiles.bundle.strategy, "fifo" ) ) ) config->tiles.bundle.strategy_enum = block_engine_SchedulingStrategy_SCHEDULING_STRATEGY_FIFO;
-  else FD_LOG_ERR(( "[tiles.bundle.strategy] %s not recognized", config->tiles.bundle.strategy ));
+  if( FD_LIKELY( !strcmp( config->tiles.bundle.strategy, "fba" ) ) ) config->tiles.bundle.strategy_enum = block_engine_SchedulingStrategy_SCHEDULING_STRATEGY_FBA;
+  else FD_LOG_ERR(( "[tiles.bundle.strategy] %s not recognized, only \"fba\" is supported", config->tiles.bundle.strategy ));
 
   fd_config_fill_net( config );
 
@@ -452,9 +450,9 @@ fd_config_validate( fd_config_t const * config ) {
     FD_LOG_ERR(( "`tiles.bundle.keepalive_interval_millis` must be in range [3000, 3,600,000]" ));
   }
 
-  if( FD_UNLIKELY( config->tiles.bundle.harmonic_block_mode &&
+  if( FD_UNLIKELY( config->tiles.bundle.inertia_block_mode &&
                    !config->tiles.bundle.tpu_url[0] ) ) {
-    FD_LOG_ERR(( "`tiles.bundle.tpu_url` must be set when `tiles.bundle.harmonic_block_mode` is enabled" ));
+    FD_LOG_ERR(( "`tiles.bundle.tpu_url` must be set when `tiles.bundle.inertia_block_mode` is enabled" ));
   }
 
   CFG_HAS_NON_EMPTY( development.core_dump );

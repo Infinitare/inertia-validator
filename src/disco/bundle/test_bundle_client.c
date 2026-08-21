@@ -921,7 +921,7 @@ static ulong publish_after_credit( fd_bundle_tile_t * state );
 FD_UNIT_TEST( harmonic_block_slot_parsing ) {
   FD_LOG_NOTICE(( "Testing harmonic block slot parsing from uuid" ));
   test_bundle_env_t env[1]; test_bundle_env_create( env, wksp );
-  test_bundle_env_enable_harmonic_block_mode( env, wksp );
+  test_bundle_env_enable_inertia_block_mode( env, wksp );
   test_bundle_env_mock_harmonic_block_conn( env );
   fd_bundle_tile_t * state = env->state;
 
@@ -935,7 +935,7 @@ FD_UNIT_TEST( harmonic_block_slot_parsing ) {
   fd_bundle_client_grpc_callbacks.rx_msg(
       state,
       subscribe_blocks_msg_slot_12345678, subscribe_blocks_msg_slot_12345678_sz,
-      FD_BUNDLE_CLIENT_REQ_SubscribeBlocks
+      FD_BUNDLE_CLIENT_REQ_Bundle_SubscribeBundles
   );
 
   FD_TEST( state->harmonic_block_slot==12345678UL );
@@ -961,7 +961,7 @@ FD_UNIT_TEST( harmonic_block_slot_parsing ) {
 FD_UNIT_TEST( harmonic_block_rx_many_txns ) {
   FD_LOG_NOTICE(( "Testing harmonic block rx with many txns (no len=5 limit)" ));
   test_bundle_env_t env[1]; test_bundle_env_create( env, wksp );
-  test_bundle_env_enable_harmonic_block_mode( env, wksp );
+  test_bundle_env_enable_inertia_block_mode( env, wksp );
   test_bundle_env_mock_harmonic_block_conn( env );
   fd_bundle_tile_t * state = env->state;
 
@@ -971,7 +971,7 @@ FD_UNIT_TEST( harmonic_block_rx_many_txns ) {
   fd_bundle_client_grpc_callbacks.rx_msg(
       state,
       subscribe_blocks_msg_slot_99999999, subscribe_blocks_msg_slot_99999999_sz,
-      FD_BUNDLE_CLIENT_REQ_SubscribeBlocks
+      FD_BUNDLE_CLIENT_REQ_Bundle_SubscribeBundles
   );
 
   FD_TEST( state->harmonic_block_slot==99999999UL );
@@ -997,7 +997,7 @@ FD_UNIT_TEST( harmonic_block_rx_many_txns ) {
 FD_UNIT_TEST( all_three_sources ) {
   FD_LOG_NOTICE(( "Testing all 3 sources: packets, bundles, and harmonic blocks" ));
   test_bundle_env_t env[1]; test_bundle_env_create( env, wksp );
-  test_bundle_env_enable_harmonic_block_mode( env, wksp );
+  test_bundle_env_enable_inertia_block_mode( env, wksp );
   test_bundle_env_mock_harmonic_block_conn( env );
   fd_bundle_tile_t * state = env->state;
 
@@ -1030,7 +1030,7 @@ FD_UNIT_TEST( all_three_sources ) {
   fd_bundle_client_grpc_callbacks.rx_msg(
       state,
       subscribe_blocks_msg_slot_99999999, subscribe_blocks_msg_slot_99999999_sz,
-      FD_BUNDLE_CLIENT_REQ_SubscribeBlocks
+      FD_BUNDLE_CLIENT_REQ_Bundle_SubscribeBundles
   );
   FD_TEST( state->harmonic_block_received_cnt==1UL );
   FD_TEST( state->harmonic_pending_len==6UL );
@@ -1060,7 +1060,7 @@ FD_UNIT_TEST( all_three_sources ) {
 FD_UNIT_TEST( interleaved_sources ) {
   FD_LOG_NOTICE(( "Testing interleaved bundles and harmonic blocks" ));
   test_bundle_env_t env[1]; test_bundle_env_create( env, wksp );
-  test_bundle_env_enable_harmonic_block_mode( env, wksp );
+  test_bundle_env_enable_inertia_block_mode( env, wksp );
   test_bundle_env_mock_harmonic_block_conn( env );
   fd_bundle_tile_t * state = env->state;
 
@@ -1079,7 +1079,7 @@ FD_UNIT_TEST( interleaved_sources ) {
   fd_bundle_client_grpc_callbacks.rx_msg(
       state,
       subscribe_blocks_msg_slot_99999999, subscribe_blocks_msg_slot_99999999_sz,
-      FD_BUNDLE_CLIENT_REQ_SubscribeBlocks
+      FD_BUNDLE_CLIENT_REQ_Bundle_SubscribeBundles
   );
   FD_TEST( state->harmonic_block_received_cnt==1UL );
   FD_TEST( state->harmonic_block_slot==99999999UL );
@@ -1101,7 +1101,7 @@ FD_UNIT_TEST( interleaved_sources ) {
   fd_bundle_client_grpc_callbacks.rx_msg(
       state,
       subscribe_blocks_msg_slot_12345678, subscribe_blocks_msg_slot_12345678_sz,
-      FD_BUNDLE_CLIENT_REQ_SubscribeBlocks
+      FD_BUNDLE_CLIENT_REQ_Bundle_SubscribeBundles
   );
   FD_TEST( state->harmonic_block_received_cnt==2UL );
   FD_TEST( state->harmonic_block_slot==12345678UL );
@@ -1126,7 +1126,7 @@ FD_UNIT_TEST( interleaved_sources ) {
 FD_UNIT_TEST( harmonic_staging_partial_drain ) {
   FD_LOG_NOTICE(( "Testing harmonic staging partial drain with memmove" ));
   test_bundle_env_t env[1]; test_bundle_env_create( env, wksp );
-  test_bundle_env_enable_harmonic_block_mode( env, wksp );
+  test_bundle_env_enable_inertia_block_mode( env, wksp );
   test_bundle_env_mock_harmonic_block_conn( env );
   fd_bundle_tile_t * state = env->state;
 
@@ -1135,7 +1135,7 @@ FD_UNIT_TEST( harmonic_staging_partial_drain ) {
   fd_bundle_client_grpc_callbacks.rx_msg(
       state,
       subscribe_blocks_msg_8txns, subscribe_blocks_msg_8txns_sz,
-      FD_BUNDLE_CLIENT_REQ_SubscribeBlocks
+      FD_BUNDLE_CLIENT_REQ_Bundle_SubscribeBundles
   );
   FD_TEST( state->harmonic_pending_len==8UL );
   FD_TEST( state->harmonic_block_slot==55555555UL );
@@ -1175,7 +1175,7 @@ FD_UNIT_TEST( harmonic_staging_partial_drain ) {
 FD_UNIT_TEST( harmonic_before_credit_gate ) {
   FD_LOG_NOTICE(( "Testing before_credit gate defers gRPC during staging" ));
   test_bundle_env_t env[1]; test_bundle_env_create( env, wksp );
-  test_bundle_env_enable_harmonic_block_mode( env, wksp );
+  test_bundle_env_enable_inertia_block_mode( env, wksp );
   test_bundle_env_mock_harmonic_block_conn( env );
   fd_bundle_tile_t * state = env->state;
 
@@ -1185,7 +1185,7 @@ FD_UNIT_TEST( harmonic_before_credit_gate ) {
   fd_bundle_client_grpc_callbacks.rx_msg(
       state,
       subscribe_blocks_msg_slot_12345678, subscribe_blocks_msg_slot_12345678_sz,
-      FD_BUNDLE_CLIENT_REQ_SubscribeBlocks
+      FD_BUNDLE_CLIENT_REQ_Bundle_SubscribeBundles
   );
   FD_TEST( state->harmonic_pending_len==2UL );
 
@@ -1223,7 +1223,7 @@ FD_UNIT_TEST( harmonic_before_credit_gate ) {
   fd_bundle_client_grpc_callbacks.rx_msg(
       state,
       subscribe_blocks_msg_slot_99999999, subscribe_blocks_msg_slot_99999999_sz,
-      FD_BUNDLE_CLIENT_REQ_SubscribeBlocks
+      FD_BUNDLE_CLIENT_REQ_Bundle_SubscribeBundles
   );
   FD_TEST( state->harmonic_pending_len==6UL );
   FD_TEST( state->harmonic_block_slot==99999999UL );
@@ -1241,7 +1241,7 @@ FD_UNIT_TEST( harmonic_before_credit_gate ) {
 FD_UNIT_TEST( reset_clears_harmonic_state ) {
   FD_LOG_NOTICE(( "Testing reset clears harmonic state" ));
   test_bundle_env_t env[1]; test_bundle_env_create( env, wksp );
-  test_bundle_env_enable_harmonic_block_mode( env, wksp );
+  test_bundle_env_enable_inertia_block_mode( env, wksp );
   test_bundle_env_mock_harmonic_block_conn( env );
   fd_bundle_tile_t * state = env->state;
 
@@ -1251,7 +1251,7 @@ FD_UNIT_TEST( reset_clears_harmonic_state ) {
   fd_bundle_client_grpc_callbacks.rx_msg(
       state,
       subscribe_blocks_msg_slot_12345678, subscribe_blocks_msg_slot_12345678_sz,
-      FD_BUNDLE_CLIENT_REQ_SubscribeBlocks
+      FD_BUNDLE_CLIENT_REQ_Bundle_SubscribeBundles
   );
   FD_TEST( state->harmonic_pending_len==2UL );
   FD_TEST( state->harmonic_staged_block_slot==12345678UL );
@@ -1265,8 +1265,8 @@ FD_UNIT_TEST( reset_clears_harmonic_state ) {
   FD_TEST( state->harmonic_pending_len==0UL );
   FD_TEST( state->harmonic_staged_block_slot==0UL );
   FD_TEST( state->harmonic_staged_block_txn_cnt==0 );
-  FD_TEST( state->harmonic_block_subscription_live==0 );
-  FD_TEST( state->harmonic_block_subscription_wait==0 );
+  FD_TEST( state->bundle_subscription_live==0 );
+  FD_TEST( state->bundle_subscription_wait==0 );
 
   FD_LOG_NOTICE(( "Reset clears harmonic state test passed" ));
   test_bundle_env_destroy( env );
@@ -1414,7 +1414,7 @@ test_harmonic_block_oversized( fd_wksp_t * wksp ) {
 
   /* Now test receiving this block - use the big workspace */
   test_bundle_env_t env[1]; test_bundle_env_create( env, big_wksp );
-  test_bundle_env_enable_harmonic_block_mode( env, big_wksp );
+  test_bundle_env_enable_inertia_block_mode( env, big_wksp );
   test_bundle_env_mock_harmonic_block_conn( env );
   fd_bundle_tile_t * state = env->state;
 
@@ -1423,7 +1423,7 @@ test_harmonic_block_oversized( fd_wksp_t * wksp ) {
   fd_bundle_client_grpc_callbacks.rx_msg(
       state,
       msg_buf, actual_msg_sz,
-      FD_BUNDLE_CLIENT_REQ_SubscribeBlocks
+      FD_BUNDLE_CLIENT_REQ_Bundle_SubscribeBundles
   );
 
   /* Verify slot was parsed correctly */

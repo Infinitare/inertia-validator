@@ -308,11 +308,7 @@ struct fd_bundle_tile {
 
   /* ========== Harmonic block mode  ========== */
 
-  int harmonic_block_mode;  /* If set, enables harmonic block subscription (third stream on same connection) */
-
-  /* Harmonic block subscription state (uses main grpc_client/auther) */
-  uchar harmonic_block_subscription_live : 1;
-  uchar harmonic_block_subscription_wait : 1;
+  int inertia_block_mode;  /* If set, blocks are accepted on the bundle stream */
 
   /* Harmonic block state */
   ulong harmonic_block_seq;
@@ -354,9 +350,6 @@ typedef struct fd_bundle_tile fd_bundle_tile_t;
 #define FD_BUNDLE_CLIENT_REQ_Bundle_SubscribePackets            4
 #define FD_BUNDLE_CLIENT_REQ_Bundle_SubscribeBundles            5
 #define FD_BUNDLE_CLIENT_REQ_Bundle_GetBlockBuilderFeeInfo      6
-
-/* Harmonic block endpoint request context IDs */
-#define FD_BUNDLE_CLIENT_REQ_SubscribeBlocks                    7
 /* Leader window info submission */
 #define FD_BUNDLE_CLIENT_REQ_SubmitLeaderWindowInfo             8
 

@@ -159,7 +159,7 @@ fd_config_extract_pod( uchar *       pod,
   CFG_POP      ( uint,   tiles.bundle.commission_bps                      );
   CFG_POP      ( ulong,  tiles.bundle.keepalive_interval_millis           );
   CFG_POP      ( bool,   tiles.bundle.tls_cert_verify                     );
-  CFG_POP      ( bool,   tiles.bundle.harmonic_block_mode                 );
+  CFG_POP      ( bool,   tiles.bundle.inertia_block_mode                 );
   CFG_POP      ( cstr,   tiles.bundle.strategy                            );
 
   CFG_POP      ( uint,   tiles.pack.max_pending_transactions              );

@@ -307,9 +307,10 @@ struct fd_topo_tile {
       uchar tls_cert_verify : 1;
 
       /* Harmonic block mode config */
-      int   harmonic_block_mode; /* If set, enables a third stream (subscribeBundles) for
-                                    harmonic block subscriptions. Normal bundle subscriptions
-                                    (len<=5) remain active. */
+      int   inertia_block_mode; /* If set, whole blocks are accepted on the bundle
+                                    stream, identified by a decimal slot in
+                                    BundleUuid.uuid.  Normal bundles (len<=5) remain
+                                    active on the same stream. */
 
       /* Block engine scheduling strategy for Harmonic block mode */
       int   strategy;
@@ -338,7 +339,7 @@ struct fd_topo_tile {
         ulong commission_bps;
         char  identity_key_path[ PATH_MAX ];
         char  vote_account_path[ PATH_MAX ]; /* or pubkey is okay */
-        int   harmonic_block_mode; /* If set, processes harmonic blocks */
+        int   inertia_block_mode; /* If set, processes harmonic blocks */
         int   strategy; /* block_engine_SchedulingStrategy for crank memo */
       } bundle;
       ulong acct_blocklist_cnt;

@@ -371,10 +371,8 @@ pack_schedule_strategy_memo( int pack_schedule_strategy ) {
 static char const *
 pack_crank_strategy_memo( int bundle_strategy ) {
   switch( bundle_strategy ) {
-  case block_engine_SchedulingStrategy_SCHEDULING_STRATEGY_FBA:  return "FBA";
-  case block_engine_SchedulingStrategy_SCHEDULING_STRATEGY_MREV: return "MRV";
-  case block_engine_SchedulingStrategy_SCHEDULING_STRATEGY_FIFO: return "FIF";
-  default:                                                     return "???";
+  case block_engine_SchedulingStrategy_SCHEDULING_STRATEGY_FBA: return "FBA";
+  default:                                                      return "???";
   }
 }
 
@@ -1063,7 +1061,7 @@ poll_next_execle:
     mline at time now.  Speculatively process it here. */
 
 /* before_frag: called before reading fragment data.
-   if harmonic_block_mode is on and the harmonic pool is exhausted,
+   if inertia_block_mode is on and the harmonic pool is exhausted,
    delay processing from resolv (return -1) to apply backpressure.
    still process everything else. */
 static inline int
@@ -1628,7 +1626,7 @@ unprivileged_init( fd_topo_t const *      topo,
   FD_TEST( (tile->pack.schedule_strategy>=0) & (tile->pack.schedule_strategy<=FD_PACK_STRATEGY_BALANCED) );
 
   ctx->crank->enabled = tile->pack.bundle.enabled;
-  ctx->harmonic = tile->pack.bundle.harmonic_block_mode;
+  ctx->harmonic = tile->pack.bundle.inertia_block_mode;
   if( FD_UNLIKELY( tile->pack.bundle.enabled ) ) {
     ctx->runtime_cfg->harmonic_strategy = tile->pack.bundle.strategy;
 
@@ -1706,7 +1704,7 @@ unprivileged_init( fd_topo_t const *      topo,
 #endif
   ctx->use_consumed_cus              = tile->pack.use_consumed_cus;
   ctx->crank->enabled                = tile->pack.bundle.enabled;
-  ctx->harmonic    = tile->pack.bundle.harmonic_block_mode;
+  ctx->harmonic    = tile->pack.bundle.inertia_block_mode;
 
 #if !SMALL_MICROBLOCKS
   ctx->wait_duration_ticks[ 0 ] = ULONG_MAX;

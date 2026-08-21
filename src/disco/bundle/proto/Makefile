@@ -5,7 +5,7 @@ PROTOS+=auth
 PROTOS+=block_engine
 PROTOS+=bundle
 PROTOS+=packet
-PROTOS+=tpu
+PROTOS+=relayer
 PROTOS+=shared
 PROTOS+=timestamp
 

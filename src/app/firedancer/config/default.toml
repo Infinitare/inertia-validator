@@ -1389,13 +1389,11 @@ telemetry = true
         # this option to 'false'.
         tls_cert_verify = true
 
-        # Scheduling strategy to pass to the block engine.  Accepted values:
-        #
-        #   "fifo" - First-in, first-out continuous availability sequencing
-        #   "fba"  - Frequent batch auction: discrete batches ordered by
-        #            priority fees and tips (default - matches salsa)
-        #   "mrev" - Maximum revenue: continuous streaming with
-        #            revenue-prioritizing selection
+        # Scheduling strategy to request from the block engine.  It is
+        # also written as a three byte tag into the memo instruction of
+        # the tip payment crank transaction.  "fba" (frequent batch
+        # auction: discrete batches ordered by priority fees and tips) is
+        # the only accepted value.
         strategy = "fba"
 
     # The pack tile takes incoming transactions that have been verified
