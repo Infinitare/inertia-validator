@@ -470,22 +470,22 @@ tile_ctx_init( void *                 scratch,
 }
 
 static void
-privileged_init( fd_topo_t *      topo,
-                 fd_topo_tile_t * tile ) {
+privileged_init( fd_topo_t const *      topo,
+                 fd_topo_tile_t const * tile ) {
   tile_server_init( fd_topo_obj_laddr( topo, tile->tile_obj_id ), tile );
 
   FD_LOG_NOTICE(( "grpc server listening at " FD_IP4_ADDR_FMT ":%u", FD_IP4_ADDR_FMT_ARGS( tile->grpc.listen_addr ), tile->grpc.listen_port ));
 }
 
 static void
-unprivileged_init( fd_topo_t *      topo,
-                   fd_topo_tile_t * tile ) {
+unprivileged_init( fd_topo_t const *      topo,
+                   fd_topo_tile_t const * tile ) {
   fd_grpc_tile_t * ctx = tile_ctx_init( fd_topo_obj_laddr( topo, tile->tile_obj_id ), tile );
 
   FD_TEST( tile->in_cnt<=sizeof( ctx->in )/sizeof( ctx->in[ 0 ] ) );
   for( ulong i=0UL; i<tile->in_cnt; i++ ) {
-    fd_topo_link_t * link      = &topo->links[ tile->in_link_id[ i ] ];
-    fd_topo_wksp_t * link_wksp = &topo->workspaces[ topo->objs[ link->dcache_obj_id ].wksp_id ];
+    fd_topo_link_t const * link      = &topo->links[ tile->in_link_id[ i ] ];
+    fd_topo_wksp_t const * link_wksp = &topo->workspaces[ topo->objs[ link->dcache_obj_id ].wksp_id ];
 
     ctx->in[ i ].mem    = link_wksp->wksp;
     ctx->in[ i ].chunk0 = fd_dcache_compact_chunk0( ctx->in[ i ].mem, link->dcache );
