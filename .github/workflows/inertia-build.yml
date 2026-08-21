@@ -64,8 +64,10 @@ jobs:
       # `make check` runs the compiler with -fsyntax-only over every
       # translation unit.  No linking, no test binaries: the cheapest
       # gate that still sees the whole tree.
+      # -k so one bad TU does not hide the rest -- the step still fails,
+      # but the log lists every error instead of just the first.
       - name: Compile every translation unit
-        run: make -j "$(nproc)" check
+        run: make -j "$(nproc)" -k check
 
   build-and-test:
     name: Build and unit test

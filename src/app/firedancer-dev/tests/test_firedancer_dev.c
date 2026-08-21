@@ -239,7 +239,7 @@ run_dev_main( char const * const * argv,
     for( int i=0; i<argc; i++ ) mut_argv[ i ] = (char *)argv[ i ];
     mut_argv[ argc ] = NULL;
 
-    int ret = fd_dev_main( argc, mut_argv, 1, configs, fd_topo_initialize );
+    int ret = fd_dev_main( argc, mut_argv, configs, fd_topo_initialize );
     fd_sys_util_exit_group( ret );
   }
 
