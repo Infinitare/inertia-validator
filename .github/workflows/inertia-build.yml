@@ -146,4 +146,7 @@ jobs:
       # -j 2 rather than one job per CPU: each job takes its 1 GiB
       # workspace as ordinary anonymous memory.
       - name: Run unit tests
-        run: contrib/test/run_unit_tests.sh --tests normal-page-tests.txt --page-sz normal -j 2
+        run: |
+          sudo prlimit --pid $$ --memlock=-1:-1
+          ulimit -l
+          contrib/test/run_unit_tests.sh --tests normal-page-tests.txt --page-sz normal -j 2
