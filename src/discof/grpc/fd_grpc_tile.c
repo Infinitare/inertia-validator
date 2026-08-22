@@ -24,9 +24,8 @@
 
 #define GRPC_STATUS_INVALID_ARGUMENT (3U)
 
-#define UPDATE_FIELD_SLOT (1U)
-#define UPDATE_FIELD_TXN  (2U)
-#define UPDATE_FIELD_GAP  (3U)
+#define UPDATE_FIELD_TXN  (1U)
+#define UPDATE_FIELD_GAP  (2U)
 
 #define BLOOM_BITS  (1UL<<18)
 #define BLOOM_WORDS (BLOOM_BITS>>6)
@@ -44,7 +43,6 @@ struct fd_grpc_sub {
   ulong acct_cnt;
   uchar include_votes;
   uchar include_failed;
-  uchar include_slots;
   uchar accts[ SUB_ACCT_MAX ][ 32 ];
 };
 
@@ -63,7 +61,6 @@ struct fd_grpc_tile {
 
   ulong sub_mask;
   ulong txn_mask;
-  ulong slot_mask;
   ulong vote_mask;
   ulong failed_mask;
 
@@ -196,7 +193,6 @@ index_rebuild( fd_grpc_tile_t * ctx ) {
   memset( ctx->bloom, 0, BLOOM_WORDS*sizeof(ulong) );
 
   ctx->txn_mask    = 0UL;
-  ctx->slot_mask   = 0UL;
   ctx->vote_mask   = 0UL;
   ctx->failed_mask = 0UL;
 
@@ -205,7 +201,6 @@ index_rebuild( fd_grpc_tile_t * ctx ) {
     fd_grpc_sub_t * sub = &ctx->sub[ idx ];
     ulong           bit = 1UL<<idx;
 
-    if( sub->include_slots  ) ctx->slot_mask   |= bit;
     if( sub->include_votes  ) ctx->vote_mask   |= bit;
     if( sub->include_failed ) ctx->failed_mask |= bit;
 
@@ -229,34 +224,6 @@ emit_gap( fd_grpc_tile_t * ctx ) {
 
   fd_grpc_server_msg_broadcast( ctx->server, fd_pb_encoder_out_sz( enc ), ctx->sub_mask );
   ctx->gap_cnt = 0UL;
-}
-
-static void
-emit_slot( fd_grpc_tile_t * ctx,
-           ulong            slot,
-           ulong            parent_slot,
-           ulong            block_height,
-           uchar const *    block_hash,
-           uint             commitment ) {
-  ulong mask = ctx->slot_mask;
-  if( FD_LIKELY( !mask ) ) return;
-  if( FD_UNLIKELY( ctx->gap_cnt ) ) emit_gap( ctx );
-
-  uchar * out = fd_grpc_server_msg_stage( ctx->server, MSG_MAX );
-  if( FD_UNLIKELY( !out ) ) return;
-
-  fd_pb_encoder_t enc[ 1 ];
-  fd_pb_encoder_init( enc, out, MSG_MAX );
-
-  fd_pb_submsg_open( enc, UPDATE_FIELD_SLOT );
-  fd_pb_push_uint64( enc, 1U, slot         );
-  fd_pb_push_uint64( enc, 2U, parent_slot  );
-  fd_pb_push_uint64( enc, 3U, block_height );
-  if( block_hash ) fd_pb_push_bytes( enc, 4U, block_hash, 32UL );
-  fd_pb_push_uint32( enc, 5U, commitment );
-  fd_pb_submsg_close( enc );
-
-  fd_grpc_server_msg_broadcast( ctx->server, fd_pb_encoder_out_sz( enc ), mask );
 }
 
 static void
@@ -361,7 +328,6 @@ cb_request_msg( void *        _ctx,
   sub->acct_cnt       = 0UL;
   sub->include_votes  = (uchar)!!req->include_votes;
   sub->include_failed = (uchar)!!req->include_failed;
-  sub->include_slots  = (uchar)!!req->include_slots;
 
   for( ulong i=0UL; i<req->accounts_count; i++ ) {
     if( FD_UNLIKELY( req->accounts[ i ].size!=32UL ) ) {
@@ -449,7 +415,6 @@ tile_ctx_init( void *                 scratch,
 
   ctx->sub_mask    = 0UL;
   ctx->txn_mask    = 0UL;
-  ctx->slot_mask   = 0UL;
   ctx->vote_mask   = 0UL;
   ctx->failed_mask = 0UL;
 
@@ -543,11 +508,8 @@ before_frag( fd_grpc_tile_t * ctx,
   ctx->next_seq = fd_seq_inc( seq, 1UL );
 
   switch( sig ) {
-    case REPLAY_SIG_TXN_EXECUTED:   return !ctx->txn_mask;
-    case REPLAY_SIG_SLOT_COMPLETED:
-    case REPLAY_SIG_OC_ADVANCED:
-    case REPLAY_SIG_ROOT_ADVANCED:  return !ctx->slot_mask;
-    default:                        return 1;
+    case REPLAY_SIG_TXN_EXECUTED: return !ctx->txn_mask;
+    default:                      return 1;
   }
 }
 
@@ -578,21 +540,8 @@ after_frag( fd_grpc_tile_t *    ctx,
 
   switch( sig ) {
     case REPLAY_SIG_TXN_EXECUTED: {
+      ctx->last_slot = msg->txn_executed.slot;
       emit_txn( ctx, &msg->txn_executed );
-      break;
-    }
-    case REPLAY_SIG_SLOT_COMPLETED: {
-      fd_replay_slot_completed_t const * sc = &msg->slot_completed;
-      ctx->last_slot = sc->slot;
-      emit_slot( ctx, sc->slot, sc->parent_slot, sc->block_height, sc->block_hash.uc, (uint)inertia_v1_CommitmentLevel_COMMITMENT_LEVEL_PROCESSED );
-      break;
-    }
-    case REPLAY_SIG_OC_ADVANCED: {
-      emit_slot( ctx, msg->oc_advanced.slot, 0UL, 0UL, NULL, (uint)inertia_v1_CommitmentLevel_COMMITMENT_LEVEL_CONFIRMED );
-      break;
-    }
-    case REPLAY_SIG_ROOT_ADVANCED: {
-      emit_slot( ctx, msg->root_advanced.slot, 0UL, 0UL, NULL, (uint)inertia_v1_CommitmentLevel_COMMITMENT_LEVEL_FINALIZED );
       break;
     }
     default:

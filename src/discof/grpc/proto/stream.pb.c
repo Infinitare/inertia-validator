@@ -10,5 +10,3 @@ PB_BIND(inertia_v1_SubscribeRequest, inertia_v1_SubscribeRequest, 4)
 
 
 
-
-

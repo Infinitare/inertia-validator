@@ -99,7 +99,6 @@ main( int     argc,
   FD_LOG_NOTICE(( "subscribe to any of these account keys (base64, as grpcurl expects):" ));
   for( ulong i=0UL; i<txn_cnt; i++ ) print_accounts( execs[ i ].txn, i );
 
-  ulong base_slot = ctx->last_slot;
   long interval = rate ? (long)(1000000000UL/rate) : 1000000000L;
   long next     = fd_log_wallclock();
   ulong seq     = 0UL;
@@ -111,21 +110,7 @@ main( int     argc,
     if( now<next ) continue;
     next += interval;
 
-    if( seq%32UL==0UL ) {
-      uchar block_hash[ 32 ];
-      memset( block_hash, (int)(ctx->last_slot & 0xffUL), 32UL );
-      emit_slot( ctx, ctx->last_slot, ctx->last_slot-1UL, ctx->last_slot/2UL, block_hash,
-                 (uint)inertia_v1_CommitmentLevel_COMMITMENT_LEVEL_PROCESSED );
-
-      if( ctx->last_slot>=base_slot+2UL )
-        emit_slot( ctx, ctx->last_slot-2UL, 0UL, 0UL, NULL,
-                   (uint)inertia_v1_CommitmentLevel_COMMITMENT_LEVEL_CONFIRMED );
-      if( ctx->last_slot>=base_slot+32UL )
-        emit_slot( ctx, ctx->last_slot-32UL, 0UL, 0UL, NULL,
-                   (uint)inertia_v1_CommitmentLevel_COMMITMENT_LEVEL_FINALIZED );
-
-      ctx->last_slot++;
-    }
+    if( seq%32UL==0UL ) ctx->last_slot++;
 
     fd_replay_txn_executed_t * exec = &execs[ seq%txn_cnt ];
     exec->slot = ctx->last_slot;
