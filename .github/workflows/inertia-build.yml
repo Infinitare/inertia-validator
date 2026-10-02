@@ -1,0 +1,152 @@
+name: Build
+
+# Upstream's build and test workflows all target firedancer-io's
+# self-hosted `fd-public-repo` runners, so they never start on this fork.
+# This one runs on GitHub-hosted runners instead, which is enough to
+# answer "does it still compile" -- the question that matters after an
+# upstream merge -- plus the unit tests that fit in normal pages.
+#
+# It is not a substitute for the real thing: integration tests, backtest,
+# the QUIC and VM suites and anything else needing gigantic pages still
+# need a Linux box with hugetlbfs configured.
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CC: gcc
+  FD_AUTO_INSTALL_PACKAGES: 1
+
+jobs:
+  compile:
+    name: Compile check
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Reclaim runner disk
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      # deps.sh installs its build products under ./opt.  Only include
+      # and lib are needed to build against them -- the same pair
+      # contrib/deps-bundle.sh ships -- so the cache stays small.
+      - name: Cache dependency prefix
+        id: deps-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            opt/include
+            opt/lib
+          key: deps-${{ runner.os }}-${{ env.CC }}-${{ hashFiles('deps.sh') }}
+
+      - name: Install system packages
+        run: ./deps.sh check
+
+      - name: Build dependencies
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        run: ./deps.sh +dev fetch install
+
+      # `make check` runs the compiler with -fsyntax-only over every
+      # translation unit.  No linking, no test binaries: the cheapest
+      # gate that still sees the whole tree.
+      # -k so one bad TU does not hide the rest -- the step still fails,
+      # but the log lists every error instead of just the first.
+      - name: Compile every translation unit
+        run: make -j "$(nproc)" -k check
+
+  build-and-test:
+    name: Build and unit test
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Reclaim runner disk
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: Cache dependency prefix
+        id: deps-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            opt/include
+            opt/lib
+          key: deps-${{ runner.os }}-${{ env.CC }}-${{ hashFiles('deps.sh') }}
+
+      - name: Install system packages
+        run: ./deps.sh check
+
+      - name: Build dependencies
+        if: steps.deps-cache.outputs.cache-hit != 'true'
+        run: ./deps.sh +dev fetch install
+
+      - name: Build binaries, libraries and unit tests
+        run: make -j "$(nproc)" all
+
+      # run_unit_tests.sh defaults to gigantic pages, and a stock runner
+      # cannot reserve 1 GiB pages.  Normal 4 KiB pages need no
+      # reservation, but the scheduler's per-test --page-cnt table is
+      # denominated in gigantic pages: a test listed there would be
+      # handed e.g. 8 normal pages -- 32 KiB -- instead of 8 GiB and
+      # fail to create its workspace.  So drop exactly those tests and
+      # run the rest, which take the 1 GiB default.  Reading the names
+      # back out of the script keeps the list in sync across merges.
+      - name: Select tests that fit in normal pages
+        run: |
+          eval "$(make -s env)"
+          sed -n 's/^[[:space:]]*\[\([A-Za-z0-9_]*\)\]=.*/\1/p' \
+            contrib/test/run_unit_tests.sh | sort -u > needs-gigantic.txt
+          awk 'NR==FNR { skip[$0]=1; next }
+               /^[[:space:]]*(#|$)/ { next }
+               { name=$0; sub(/.*\//,"",name); if( !(name in skip) ) print }' \
+            needs-gigantic.txt "$OBJDIR/unit-test/automatic.txt" \
+            > normal-page-tests.txt
+          echo "skipping $(wc -l < needs-gigantic.txt), running $(wc -l < normal-page-tests.txt)"
+
+      # run_unit_tests.sh budgets normal pages from MemFree, which
+      # excludes reclaimable page cache -- after `make all` that reads as
+      # a few hundred MiB, less than the 1 GiB a single job reserves, and
+      # the scheduler then admits no test at all.  Drop the cache so
+      # MemFree reflects what is actually available.
+      # The scheduler has no guard for this -- its own check compares
+      # against the gigantic-page table -- and simply never dispatches,
+      # so assert here rather than let the job sit until it times out.
+      - name: Reclaim page cache
+        run: |
+          sync
+          sudo sh -c 'echo 3 > /proc/sys/vm/drop_caches'
+          free -m
+          free_pages=$(( $(awk '/^MemFree:/{print $2}' /proc/meminfo) / 4 ))
+          need=$(( 262144 * 2 ))
+          echo "free normal pages: $free_pages, needed for 2 jobs: $need"
+          if [ "$free_pages" -lt "$need" ]; then
+            echo "not enough free memory to admit a single test job" >&2
+            exit 1
+          fi
+
+      # -j 2 rather than one job per CPU: each job takes its 1 GiB
+      # workspace as ordinary anonymous memory.
+      - name: Run unit tests
+        run: |
+          sudo prlimit --pid $$ --memlock=-1:-1
+          ulimit -l
+          contrib/test/run_unit_tests.sh --tests normal-page-tests.txt --page-sz normal -j 2

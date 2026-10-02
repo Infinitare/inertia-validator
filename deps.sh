@@ -131,18 +131,16 @@ fetch () {
 
 check_fedora_pkgs () {
   local REQUIRED_RPMS=(
-    curl               # download rustup
+    curl               # download dependencies
     diffutils          # build system
     make               # build system
     pkgconf            # build system
     gcc                # compiler
     gcc-c++            # compiler
 
-    cmake              # Agave (RocksDB)
-    clang-devel        # Agave (bindgen)
-    systemd-devel      # Agave
-    perl               # Agave (OpenSSL)
-    protobuf-compiler  # Agave, solfuzz
+    cmake              # RocksDB, snappy
+    perl               # OpenSSL
+    protobuf-compiler  # solfuzz
   )
 
   echo "[~] Checking for required RPM packages"
@@ -168,15 +166,13 @@ check_fedora_pkgs () {
 
 check_debian_pkgs () {
   local REQUIRED_DEBS=(
-    curl               # download rustup
+    curl               # download dependencies
     diffutils          # build system
     build-essential    # C/C++ compiler
     pkgconf            # build system
 
-    cmake              # Agave (protobuf-src)
-    libclang-dev       # Agave (bindgen)
-    libudev-dev        # Agave
-    protobuf-compiler  # Agave
+    cmake              # RocksDB, snappy
+    protobuf-compiler  # solfuzz
   )
 
   echo "[~] Checking for required DEB packages"
@@ -203,7 +199,7 @@ check_debian_pkgs () {
 check_alpine_pkgs () {
   local REQUIRED_APKS=(
     build-base       # C/C++ compiler
-    curl             # download rustup
+    curl             # download dependencies
     linux-headers    # base dependency
     grep             # build system
     make             # build system
@@ -254,12 +250,11 @@ check_macos_pkgs () {
 check_arch_pkgs () {
   local REQUIRED_PKGS=(
     base-devel        # C/C++ compiler, make, etc.
-    curl              # download rustup
-    cmake             # Agave (protobuf-src)
-    clang             # Agave (bindgen)
-    perl              # Agave (OpenSSL)
-    protobuf          # Agave, solfuzz
-    systemd-libs      # Agave
+    curl              # download dependencies
+    cmake             # RocksDB, snappy
+    clang             # compiler
+    perl              # OpenSSL
+    protobuf          # solfuzz
   )
 
   echo "[~] Checking for required Arch Linux packages"
@@ -319,28 +314,11 @@ check () {
     esac
   fi
 
-  if [[ ! -x "$(command -v cargo)" ]]; then
-    echo "[!] cargo is not in PATH"
-    source "$HOME/.cargo/env" || true
-  fi
-  if [[ ! -x "$(command -v cargo)" ]]; then
-    if [[ "${FD_AUTO_INSTALL_PACKAGES:-}" == "1" ]]; then
-      choice=y
-    else
-      read -r -p "[?] Install rustup? (y/N) " choice
-    fi
-    case "$choice" in
-      y|Y)
-        echo "[+] Installing rustup"
-        # Keep this in sync with agave/rust-toolchain.toml
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.95.0 --profile minimal
-        source "$HOME/.cargo/env"
-        ;;
-      *)
-        echo "[-] Skipping rustup install"
-        ;;
-    esac
-  fi
+  # NOTE: upstream installs rustup here, because Frankendancer links the
+  # Agave validator (Rust).  Firedancer is pure C and needs no Rust
+  # toolchain, so this fork does not install one.  A few optional dev
+  # tools under contrib/ are still Rust; install rustup yourself if you
+  # want those.
 }
 
 install_openssl () {

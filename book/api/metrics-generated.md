@@ -376,6 +376,11 @@
 | <span class="metrics-name">bundle_&#8203;shredstream_&#8203;heartbeat_&#8203;sent</span> | counter | ShredStream heartbeats successfully sent |
 | <span class="metrics-name">bundle_&#8203;ping_&#8203;acked</span> | counter | HTTP/2 PINGs acknowledged by server |
 | <span class="metrics-name">bundle_&#8203;state</span> | gauge | 0=disconnected, 1=connecting, 2=connected, 3=sleeping |
+| <span class="metrics-name">bundle_&#8203;tpu_&#8203;connected</span> | gauge | 1 if connected to the TPU endpoint, 0 if not |
+| <span class="metrics-name">bundle_&#8203;tpu_&#8203;packet_&#8203;received</span> | counter | Packets received from TPU endpoint |
+| <span class="metrics-name">bundle_&#8203;tpu_&#8203;transaction_&#8203;received</span> | counter | Transactions received from TPU endpoint |
+| <span class="metrics-name">bundle_&#8203;block_&#8203;received</span> | counter | Blocks received |
+| <span class="metrics-name">bundle_&#8203;block_&#8203;transaction_&#8203;received</span> | counter | Transactions received from blocks |
 | <span class="metrics-name">bundle_&#8203;rtt_&#8203;sample_&#8203;nanos</span> | gauge | Latest RTT sample at scrape time, in nanoseconds |
 | <span class="metrics-name">bundle_&#8203;rtt_&#8203;smoothed_&#8203;nanos</span> | gauge | RTT moving average, in nanoseconds |
 | <span class="metrics-name">bundle_&#8203;rtt_&#8203;variance_&#8203;nanos</span> | gauge | RTT variance, in nanoseconds |
@@ -469,6 +474,7 @@
 | <span class="metrics-name">pack_&#8203;txn_&#8203;per_&#8203;microblock</span> | histogram | Transactions in a scheduled microblock, including both votes and non-votes |
 | <span class="metrics-name">pack_&#8203;vote_&#8203;per_&#8203;microblock</span> | histogram | Simple vote transactions in a scheduled microblock |
 | <span class="metrics-name">pack_&#8203;txn_&#8203;normal_&#8203;rx</span> | counter | Transactions received via the normal TPU path |
+| <span class="metrics-name">pack_&#8203;txn_&#8203;inserted</span><br/>{pack_&#8203;txn_&#8203;insert_&#8203;return="<span class="metrics-enum">block_&#8203;failed</span>"} | counter | Result of inserting a transaction into the pack object (Harmonic block insert rejected (wrong mode, slot, cutoff, or validation failed)) |
 | <span class="metrics-name">pack_&#8203;txn_&#8203;inserted</span><br/>{pack_&#8203;txn_&#8203;insert_&#8203;return="<span class="metrics-enum">instr_&#8203;acct_&#8203;cnt</span>"} | counter | Result of inserting a transaction into the pack object (Transaction has an instruction that references too many accounts) |
 | <span class="metrics-name">pack_&#8203;txn_&#8203;inserted</span><br/>{pack_&#8203;txn_&#8203;insert_&#8203;return="<span class="metrics-enum">nonce_&#8203;conflict</span>"} | counter | Result of inserting a transaction into the pack object (Bundle with two conflicting durable nonce transactions) |
 | <span class="metrics-name">pack_&#8203;txn_&#8203;inserted</span><br/>{pack_&#8203;txn_&#8203;insert_&#8203;return="<span class="metrics-enum">acct_&#8203;blocklist</span>"} | counter | Result of inserting a transaction into the pack object (Transaction uses an account on the account blocklist) |
@@ -1924,6 +1930,29 @@
 | <span class="metrics-name">mlx5_&#8203;gre_&#8203;pkt_&#8203;tx_&#8203;oversize</span> | counter | Number of GRE transmit jobs dropped because the encapsulated packet exceeded the route MTU. |
 | <span class="metrics-name">mlx5_&#8203;tx_&#8203;buffer_&#8203;busy</span> | gauge | Number of TX buffers pending or submitted to the NIC. |
 | <span class="metrics-name">mlx5_&#8203;tx_&#8203;buffer_&#8203;idle</span> | gauge | Number of TX buffers available for a new transmit job. |
+
+</div>
+
+## Grpc Tile
+
+<div class="metrics">
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| <span class="metrics-name">grpc_&#8203;subscription_&#8203;count</span> | gauge | The number of active subscriptions to the gRPC streaming server |
+| <span class="metrics-name">grpc_&#8203;conn_&#8203;accepted</span> | counter | The total number of connections accepted by the gRPC streaming server |
+| <span class="metrics-name">grpc_&#8203;conn_&#8203;rejected</span> | counter | The total number of connections rejected because the connection limit was reached |
+| <span class="metrics-name">grpc_&#8203;conn_&#8203;err</span> | counter | The total number of times accepting a connection failed |
+| <span class="metrics-name">grpc_&#8203;stream_&#8203;opened</span> | counter | The total number of gRPC streams opened |
+| <span class="metrics-name">grpc_&#8203;stream_&#8203;rejected</span> | counter | The total number of gRPC streams rejected because of stream limits or an unimplemented path |
+| <span class="metrics-name">grpc_&#8203;stream_&#8203;evicted</span> | counter | The total number of subscribers disconnected for falling too far behind |
+| <span class="metrics-name">grpc_&#8203;msg_&#8203;staged</span> | counter | The total number of updates encoded |
+| <span class="metrics-name">grpc_&#8203;msg_&#8203;queued</span> | counter | The total number of updates queued to a subscriber, summed over subscribers |
+| <span class="metrics-name">grpc_&#8203;msg_&#8203;dropped</span> | counter | The total number of updates that could not be encoded because the send buffer was too small |
+| <span class="metrics-name">grpc_&#8203;msg_&#8203;abandoned</span> | counter | The total number of updates that were staged but never broadcast |
+| <span class="metrics-name">grpc_&#8203;txn_&#8203;oversz</span> | counter | The total number of matching transactions not sent because their encoding exceeded the message size limit |
+| <span class="metrics-name">grpc_&#8203;bytes_&#8203;tx</span> | counter | The total number of bytes written to all subscribers |
+| <span class="metrics-name">grpc_&#8203;frags_&#8203;dropped</span> | counter | The total number of replay fragments missed because the tile fell behind, reported to subscribers as gaps |
 
 </div>
 

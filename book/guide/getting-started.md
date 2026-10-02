@@ -196,7 +196,7 @@ user = "firedancer"
 This configuration will cause Firedancer to run as the user `firedancer`
 on the local machine. The `identity_path` and `vote_account_path` should
 be Agave style keys, which can be generated using the [`fdctl keys`.
-subcommand](../api/cli.md#keys-new-path). The `vote_account_path` can
+subcommand](../api/firedancer-cli.md#keys-new-path). The `vote_account_path` can
 also be the public key of an existing vote account.
 
 This will put the ledger in `/home/firedancer/.firedancer/fd1/ledger`.
@@ -219,7 +219,7 @@ The Firedancer client can report diagnostic metrics similar to an Agave
 client. It is recommended to set the `[reporting.solana_metrics_config]`
 in the config file to the appropriate value for the cluster. The options
 for the different clusters are listed in the `default.toml` file in the
-[`reporting`](https://github.com/firedancer-io/firedancer/blob/main/src/app/fdctl/config/default.toml#L144)
+[`reporting`](https://github.com/firedancer-io/firedancer/blob/main/src/app/firedancer/config/default.toml#L144)
 section.
 
 ### Permissions

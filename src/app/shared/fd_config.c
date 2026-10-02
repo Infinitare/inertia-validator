@@ -10,6 +10,7 @@
 #include "../../discof/genesis/fd_genesi_tile.h"
 #include "../../disco/net/fd_net_tile.h"
 #include "../../discof/restore/utils/fd_ssarchive.h"
+#include "../../disco/bundle/proto/block_engine.pb.h"
 
 #include <unistd.h>
 #include <errno.h>
@@ -138,86 +139,6 @@ fd_config_fillf( fd_config_t * config ) {
 }
 
 static void
-fd_config_fillh( fd_config_t * config ) {
-  if( FD_UNLIKELY( strcmp( config->frankendancer.paths.accounts_path, "" ) ) ) {
-    replace( config->frankendancer.paths.accounts_path, "{user}", config->user );
-    replace( config->frankendancer.paths.accounts_path, "{name}", config->name );
-  }
-
-  if( FD_UNLIKELY( strcmp( config->frankendancer.paths.ledger, "" ) ) ) {
-    replace( config->frankendancer.paths.ledger, "{user}", config->user );
-    replace( config->frankendancer.paths.ledger, "{name}", config->name );
-  } else {
-    FD_TEST( fd_cstr_printf_check( config->frankendancer.paths.ledger, sizeof(config->frankendancer.paths.ledger), NULL, "%s/ledger", config->paths.base ) );
-  }
-
-  if( FD_UNLIKELY( strcmp( config->frankendancer.snapshots.path, "" ) ) ) {
-    replace( config->frankendancer.snapshots.path, "{user}", config->user );
-    replace( config->frankendancer.snapshots.path, "{name}", config->name );
-  } else {
-    strncpy( config->frankendancer.snapshots.path, config->frankendancer.paths.ledger, sizeof(config->frankendancer.snapshots.path) );
-  }
-
-  for( ulong i=0UL; i<config->frankendancer.paths.authorized_voter_paths_cnt; i++ ) {
-    replace( config->frankendancer.paths.authorized_voter_paths[ i ], "{user}", config->user );
-    replace( config->frankendancer.paths.authorized_voter_paths[ i ], "{name}", config->name );
-  }
-
-  if( FD_UNLIKELY( config->tiles.quic.quic_transaction_listen_port!=config->tiles.quic.regular_transaction_listen_port+6 ) )
-    FD_LOG_ERR(( "configuration specifies invalid [tiles.quic.quic_transaction_listen_port] `%hu`. "
-                 "This must be 6 more than [tiles.quic.regular_transaction_listen_port] `%hu`",
-                 config->tiles.quic.quic_transaction_listen_port,
-                 config->tiles.quic.regular_transaction_listen_port ));
-
-  char dynamic_port_range[ 32 ];
-  fd_memcpy( dynamic_port_range, config->frankendancer.dynamic_port_range, sizeof(dynamic_port_range) );
-
-  char * dash = strstr( dynamic_port_range, "-" );
-  if( FD_UNLIKELY( !dash ) )
-    FD_LOG_ERR(( "configuration specifies invalid [dynamic_port_range] `%s`. "
-                 "This must be formatted like `<min>-<max>`",
-                 config->frankendancer.dynamic_port_range ));
-
-  *dash = '\0';
-  char * endptr;
-  ulong agave_port_min = strtoul( dynamic_port_range, &endptr, 10 );
-  if( FD_UNLIKELY( *endptr != '\0' || agave_port_min > USHORT_MAX ) )
-    FD_LOG_ERR(( "configuration specifies invalid [dynamic_port_range] `%s`. "
-                 "This must be formatted like `<min>-<max>`",
-                 config->frankendancer.dynamic_port_range ));
-  ulong agave_port_max = strtoul( dash + 1, &endptr, 10 );
-  if( FD_UNLIKELY( *endptr != '\0' || agave_port_max > USHORT_MAX ) )
-    FD_LOG_ERR(( "configuration specifies invalid [dynamic_port_range] `%s`. "
-                 "This must be formatted like `<min>-<max>`",
-                 config->frankendancer.dynamic_port_range ));
-  if( FD_UNLIKELY( agave_port_min > agave_port_max ) )
-    FD_LOG_ERR(( "configuration specifies invalid [dynamic_port_range] `%s`. "
-                 "The minimum port must be less than or equal to the maximum port",
-                 config->frankendancer.dynamic_port_range ));
-
-  if( FD_UNLIKELY( config->tiles.quic.regular_transaction_listen_port >= agave_port_min &&
-                   config->tiles.quic.regular_transaction_listen_port < agave_port_max ) )
-    FD_LOG_ERR(( "configuration specifies invalid [tiles.quic.transaction_listen_port] `%hu`. "
-                 "This must be outside the dynamic port range `%s`",
-                 config->tiles.quic.regular_transaction_listen_port,
-                 config->frankendancer.dynamic_port_range ));
-
-  if( FD_UNLIKELY( config->tiles.quic.quic_transaction_listen_port >= agave_port_min &&
-                   config->tiles.quic.quic_transaction_listen_port < agave_port_max ) )
-    FD_LOG_ERR(( "configuration specifies invalid [tiles.quic.quic_transaction_listen_port] `%hu`. "
-                 "This must be outside the dynamic port range `%s`",
-                 config->tiles.quic.quic_transaction_listen_port,
-                 config->frankendancer.dynamic_port_range ));
-
-  if( FD_UNLIKELY( config->tiles.shred.shred_listen_port >= agave_port_min &&
-                   config->tiles.shred.shred_listen_port < agave_port_max ) )
-    FD_LOG_ERR(( "configuration specifies invalid [tiles.shred.shred_listen_port] `%hu`. "
-                 "This must be outside the dynamic port range `%s`",
-                 config->tiles.shred.shred_listen_port,
-                 config->frankendancer.dynamic_port_range ));
-}
-
-static void
 fd_config_fill_net( fd_config_t * config ) {
   if( FD_UNLIKELY( !strcmp( config->net.interface, "" ) ) ) {
     uint ifindex;
@@ -241,26 +162,24 @@ fd_config_fill_net( fd_config_t * config ) {
   if( FD_UNLIKELY( -1==fd_net_util_if_addr( config->net.interface, &iface_ip ) ) )
     FD_LOG_ERR(( "could not get IP address for interface `%s`", config->net.interface ));
 
-  if( FD_UNLIKELY( config->is_firedancer ) ) {
-    if( FD_UNLIKELY( strcmp( config->firedancer.gossip.host, "" ) ) ) {
-      uint gossip_ip_addr = iface_ip;
-      int  has_gossip_ip4 = 0;
-      if( FD_UNLIKELY( strlen( config->firedancer.gossip.host )<=15UL ) ) {
-        /* Only sets gossip_ip_addr if it's a valid IPv4 address, otherwise assume it's a DNS name */
-        has_gossip_ip4 = fd_cstr_to_ip4_addr( config->firedancer.gossip.host, &gossip_ip_addr );
-      }
-      if( FD_UNLIKELY( !fd_ip4_addr_is_public( gossip_ip_addr ) && config->is_live_cluster && has_gossip_ip4 ) )
-        FD_LOG_ERR(( "Trying to use [gossip.host] " FD_IP4_ADDR_FMT " for listening to incoming "
-                     "transactions, but it is part of a private network and will not be routable "
-                     "for other Solana network nodes.", FD_IP4_ADDR_FMT_ARGS( gossip_ip_addr ) ));
-    } else if( FD_UNLIKELY( !fd_ip4_addr_is_public( iface_ip ) && config->is_live_cluster ) ) {
-      FD_LOG_ERR(( "Trying to use network interface `%s` for listening to incoming transactions, "
-                   "but it has IPv4 address " FD_IP4_ADDR_FMT " which is part of a private network "
-                   "and will not be routable for other Solana network nodes. If you are running "
-                   "behind a NAT and this interface is publicly reachable, you can continue by "
-                   "manually specifying the IP address to advertise in your configuration under "
-                   "[gossip.host].", config->net.interface, FD_IP4_ADDR_FMT_ARGS( iface_ip ) ));
+  if( FD_UNLIKELY( strcmp( config->firedancer.gossip.host, "" ) ) ) {
+    uint gossip_ip_addr = iface_ip;
+    int  has_gossip_ip4 = 0;
+    if( FD_UNLIKELY( strlen( config->firedancer.gossip.host )<=15UL ) ) {
+      /* Only sets gossip_ip_addr if it's a valid IPv4 address, otherwise assume it's a DNS name */
+      has_gossip_ip4 = fd_cstr_to_ip4_addr( config->firedancer.gossip.host, &gossip_ip_addr );
     }
+    if( FD_UNLIKELY( !fd_ip4_addr_is_public( gossip_ip_addr ) && config->is_live_cluster && has_gossip_ip4 ) )
+      FD_LOG_ERR(( "Trying to use [gossip.host] " FD_IP4_ADDR_FMT " for listening to incoming "
+                   "transactions, but it is part of a private network and will not be routable "
+                   "for other Solana network nodes.", FD_IP4_ADDR_FMT_ARGS( gossip_ip_addr ) ));
+  } else if( FD_UNLIKELY( !fd_ip4_addr_is_public( iface_ip ) && config->is_live_cluster ) ) {
+    FD_LOG_ERR(( "Trying to use network interface `%s` for listening to incoming transactions, "
+                 "but it has IPv4 address " FD_IP4_ADDR_FMT " which is part of a private network "
+                 "and will not be routable for other Solana network nodes. If you are running "
+                 "behind a NAT and this interface is publicly reachable, you can continue by "
+                 "manually specifying the IP address to advertise in your configuration under "
+                 "[gossip.host].", config->net.interface, FD_IP4_ADDR_FMT_ARGS( iface_ip ) ));
   }
 
   config->net.ip_addr = iface_ip;
@@ -275,9 +194,7 @@ fd_config_fill( fd_config_t * config,
     FD_LOG_ERR(( "could not get uname (%i-%s)", errno, fd_io_strerror( errno ) ));
   fd_cstr_ncpy( config->hostname, utsname.nodename, sizeof(config->hostname) ); /* Just truncate the name if it's too long to fit */
 
-  ulong cluster;
-  if( FD_UNLIKELY( !config->is_firedancer ) ) cluster = fd_genesis_cluster_identify( config->frankendancer.consensus.expected_genesis_hash );
-  else                                        cluster = fd_genesis_cluster_identify( config->consensus.expected_genesis_hash );
+  ulong cluster = fd_genesis_cluster_identify( config->consensus.expected_genesis_hash );
   config->is_live_cluster = cluster!=FD_CLUSTER_UNKNOWN;
   strcpy( config->cluster, fd_genesis_cluster_name( cluster ) );
 
@@ -384,13 +301,12 @@ fd_config_fill( fd_config_t * config,
   }
   else FD_LOG_ERR(( "[tiles.pack.schedule_strategy] %s not recognized", config->tiles.pack.schedule_strategy ));
 
+  if( FD_LIKELY( !strcmp( config->tiles.bundle.strategy, "fba" ) ) ) config->tiles.bundle.strategy_enum = block_engine_SchedulingStrategy_SCHEDULING_STRATEGY_FBA;
+  else FD_LOG_ERR(( "[tiles.bundle.strategy] %s not recognized, only \"fba\" is supported", config->tiles.bundle.strategy ));
+
   fd_config_fill_net( config );
 
-  if( FD_UNLIKELY( config->is_firedancer ) ) {
-    fd_config_fillf( config );
-  } else {
-    fd_config_fillh( config );
-  }
+  fd_config_fillf( config );
 
   fd_config_auto( config );
   if( FD_UNLIKELY( !strcmp( config->net.provider, "auto" ) ) ) {
@@ -420,25 +336,9 @@ fd_config_fill( fd_config_t * config,
     }
 
     strncpy( config->cluster, "development", sizeof(config->cluster) );
-
-    if( FD_UNLIKELY( !config->is_firedancer ) ) {
-      /* By default only_known is true for validators to ensure secure
-        snapshot download, but in development it doesn't matter and
-        often the developer does not provide known peers. */
-      config->frankendancer.rpc.only_known = 0;
-
-      /* When starting from a new genesis block, this needs to be off else
-        the validator will get stuck forever. */
-      config->frankendancer.consensus.wait_for_vote_to_start_leader = 0;
-
-      /* We have to wait until we get a snapshot before we can join a
-        second validator to this one, so make this smaller than the
-        default.  */
-      config->frankendancer.snapshots.full_snapshot_interval_slots = fd_uint_min( config->frankendancer.snapshots.full_snapshot_interval_slots, 200U );
-    }
   }
 
-  if( FD_UNLIKELY( config->is_firedancer && strcmp( config->firedancer.consensus.wait_for_supermajority_with_bank_hash, "" ) && (!config->consensus.expected_shred_version || config->consensus.wait_for_vote_to_start_leader) ) ) {
+  if( FD_UNLIKELY( strcmp( config->firedancer.consensus.wait_for_supermajority_with_bank_hash, "" ) && (!config->consensus.expected_shred_version || config->consensus.wait_for_vote_to_start_leader) ) ) {
     FD_LOG_ERR(( "Config option [consensus.wait_for_supermajority_with_bank_hash] requires consensus.expected_shred_version!=0 and consensus.wait_for_vote_to_start_leader==false." ));
   }
 
@@ -527,29 +427,9 @@ fd_config_validatef( fd_configf_t const * config ) {
   if( config->runtime.program_cache.heap_size_mib < 32 ) { FD_LOG_ERR(( "`%s` must be >= 32", "runtime.program_cache.heap_size_mib" )); }
 }
 
-static void
-fd_config_validateh( fd_configh_t const * config ) {
-  CFG_HAS_NON_EMPTY( dynamic_port_range );
-
-  CFG_HAS_NON_EMPTY( ledger.snapshot_archive_format );
-
-  CFG_HAS_NON_ZERO( snapshots.full_snapshot_interval_slots );
-  CFG_HAS_NON_ZERO( snapshots.incremental_snapshot_interval_slots );
-  CFG_HAS_NON_ZERO( snapshots.minimum_snapshot_download_speed );
-  CFG_HAS_NON_ZERO( snapshots.maximum_snapshot_download_abort );
-
-  CFG_HAS_NON_EMPTY( layout.agave_affinity );
-  CFG_HAS_NON_ZERO ( layout.resolh_tile_count );
-  CFG_HAS_NON_ZERO ( layout.bank_tile_count );
-}
-
 void
 fd_config_validate( fd_config_t const * config ) {
-  if( FD_LIKELY( config->is_firedancer ) ) {
-    fd_config_validatef( &config->firedancer );
-  } else {
-    fd_config_validateh( &config->frankendancer );
-  }
+  fd_config_validatef( &config->firedancer );
 
   CFG_HAS_NON_EMPTY( name );
   CFG_HAS_NON_EMPTY( paths.base );
@@ -634,14 +514,24 @@ fd_config_validate( fd_config_t const * config ) {
 
   CFG_HAS_NON_ZERO( tiles.shred.max_pending_shred_sets );
 
-  if( config->is_firedancer ) {
-    CFG_HAS_POW2( tiles.repair.slot_max );
-    CFG_HAS_NON_ZERO( tiles.rotor.slot_max );
-  }
+  CFG_HAS_POW2( tiles.repair.slot_max );
+  CFG_HAS_NON_ZERO( tiles.rotor.slot_max );
 
   if( FD_UNLIKELY( config->tiles.bundle.keepalive_interval_millis <    3000 ||
                    config->tiles.bundle.keepalive_interval_millis > 3600000 ) ) {
     FD_LOG_ERR(( "`tiles.bundle.keepalive_interval_millis` must be in range [3000, 3,600,000]" ));
+  }
+
+  if( FD_UNLIKELY( config->tiles.bundle.inertia_block_mode ) ) {
+    if( FD_UNLIKELY( !config->tiles.bundle.enabled ) ) {
+      FD_LOG_ERR(( "`tiles.bundle.enabled` must be true when `tiles.bundle.inertia_block_mode` is enabled" ));
+    }
+    if( FD_UNLIKELY( !config->tiles.bundle.url[0] ) ) {
+      FD_LOG_ERR(( "`tiles.bundle.url` must be set when `tiles.bundle.inertia_block_mode` is enabled" ));
+    }
+    if( FD_UNLIKELY( !config->tiles.bundle.tpu_url[0] ) ) {
+      FD_LOG_ERR(( "`tiles.bundle.tpu_url` must be set when `tiles.bundle.inertia_block_mode` is enabled" ));
+    }
   }
 
   CFG_HAS_NON_EMPTY( development.core_dump );
@@ -663,8 +553,7 @@ fd_config_validate( fd_config_t const * config ) {
 #undef CFG_HAS_POW2
 
 void
-fd_config_load( int           is_firedancer,
-                int           is_local_cluster,
+fd_config_load( int           is_local_cluster,
                 char const *  default_config,
                 ulong         default_config_sz,
                 char const *  override_config,
@@ -676,7 +565,6 @@ fd_config_load( int           is_firedancer,
                 fd_config_t * config,
                 int           dev ) {
   memset( config, 0, sizeof(config_t) );
-  config->is_firedancer = is_firedancer;
   config->boot_timestamp_nanos = fd_log_wallclock();
 
   fd_config_load_buf( config, default_config, default_config_sz, "default.toml" );

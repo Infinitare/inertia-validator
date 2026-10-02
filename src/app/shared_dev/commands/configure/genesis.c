@@ -211,13 +211,7 @@ init( config_t const * config ) {
   int bootstrap = !config->gossip.entrypoints_cnt;
   if( FD_LIKELY( !bootstrap ) ) return;
 
-  char _genesis_path[ PATH_MAX ];
-  char const * genesis_path;
-  if( FD_LIKELY( config->is_firedancer ) ) genesis_path = config->paths.genesis;
-  else {
-    genesis_path = _genesis_path;
-    FD_TEST( fd_cstr_printf_check( _genesis_path, PATH_MAX, NULL, "%s/genesis.bin", config->frankendancer.paths.ledger ) );
-  }
+  char const * genesis_path = config->paths.genesis;
 
   if( FD_UNLIKELY( -1==fd_file_util_mkdir_all( genesis_path, config->uid, config->gid, 0 ) ) )
     FD_LOG_ERR(( "could not create ledger directory `%s` (%i-%s)", genesis_path, errno, fd_io_strerror( errno ) ));
@@ -268,13 +262,7 @@ fini( config_t const * config,
       int              pre_init ) {
   (void)pre_init;
 
-  char _genesis_path[ PATH_MAX ];
-  char const * genesis_path;
-  if( FD_LIKELY( config->is_firedancer ) ) genesis_path = config->paths.genesis;
-  else {
-    genesis_path = _genesis_path;
-    FD_TEST( fd_cstr_printf_check( _genesis_path, PATH_MAX, NULL, "%s/genesis.bin", config->frankendancer.paths.ledger ) );
-  }
+  char const * genesis_path = config->paths.genesis;
 
   if( FD_UNLIKELY( -1==unlink( genesis_path ) && errno!=ENOENT ) )
     FD_LOG_ERR(( "could not remove genesis.bin file `%s` (%i-%s)", genesis_path, errno, fd_io_strerror( errno ) ));
@@ -285,7 +273,7 @@ static configure_result_t
 check( config_t const * config,
        int              check_type FD_PARAM_UNUSED ) {
   if( FD_LIKELY( config->gossip.entrypoints_cnt ) ) {
-    if( FD_UNLIKELY( config->is_firedancer && strcmp( config->consensus.expected_genesis_hash, "" ) ) ) {
+    if( FD_UNLIKELY( strcmp( config->consensus.expected_genesis_hash, "" ) ) ) {
       uchar expected_genesis_hash[ 32 ];
       if( FD_UNLIKELY( !fd_base58_decode_32( config->consensus.expected_genesis_hash, expected_genesis_hash ) ) )
         FD_LOG_ERR(( "failed to decode [consensus.expected_genesis_hash] \"%s\" as base58", config->consensus.expected_genesis_hash ));
@@ -299,20 +287,13 @@ check( config_t const * config,
     CONFIGURE_OK();
   }
 
-  char _genesis_path[ PATH_MAX ];
-  char const * genesis_path;
-  if( FD_LIKELY( config->is_firedancer ) ) genesis_path = config->paths.genesis;
-  else {
-    genesis_path = _genesis_path;
-    FD_TEST( fd_cstr_printf_check( _genesis_path, PATH_MAX, NULL, "%s/genesis.bin", config->frankendancer.paths.ledger ) );
-  }
+  char const * genesis_path = config->paths.genesis;
 
   struct stat st;
   int err = stat( genesis_path, &st );
   if( FD_UNLIKELY( -1==err && errno!=ENOENT ) ) FD_LOG_ERR(( "could not stat genesis.bin file at `%s` (%i-%s)", genesis_path, errno, fd_io_strerror( errno ) ));
   else if( FD_UNLIKELY( -1==err ) ) NOT_CONFIGURED( "`%s` does not exist", genesis_path );
 
-  if( FD_UNLIKELY( !config->is_firedancer ) ) CHECK( check_dir( config->frankendancer.paths.ledger, config->uid, config->gid, S_IFDIR | S_IRUSR | S_IWUSR | S_IXUSR ) );
   CHECK( check_file( genesis_path, config->uid, config->gid, S_IFREG | S_IRUSR | S_IWUSR ) );
 
   static uchar disk_bin[ 1UL<<24UL ];

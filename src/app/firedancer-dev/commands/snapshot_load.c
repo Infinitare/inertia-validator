@@ -188,7 +188,7 @@ snapshot_load_topo( config_t * config ) {
     fd_topo_configure_tile( tile, config );
   }
 
-  fd_topob_auto_layout( topo, 0 );
+  fd_topob_auto_layout( topo );
   fd_topob_finish( topo, CALLBACKS );
 }
 
@@ -421,7 +421,7 @@ fixup_config( config_t *     config,
            we construct the topology again (a third time ... sigh). */
   snapshot_load_topo( config );
 
-  fd_topob_auto_layout( topo, 0 );
+  fd_topob_auto_layout( topo );
   fd_topob_finish( topo, CALLBACKS );
 }
 

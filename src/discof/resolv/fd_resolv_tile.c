@@ -33,6 +33,7 @@ typedef struct blockhash blockhash_t;
 struct blockhash_map {
   blockhash_t key;
   ulong       slot;
+  ulong       block_height;
 };
 
 typedef struct blockhash_map blockhash_map_t;
@@ -164,6 +165,7 @@ typedef struct {
   fd_startup_gate_t startup_gate[1];
 
   ulong completed_slot;
+  ulong current_block_height;
   ulong blockhash_ring_idx;
   blockhash_t blockhash_ring[ BLOCKHASH_RING_LEN ];
 
@@ -442,12 +444,14 @@ after_frag( fd_resolv_ctx_t *   ctx,
 
         blockhash_map_t * blockhash = map_insert( ctx->blockhash_map, *(blockhash_t *)msg->block_hash.uc );
         blockhash->slot = msg->slot;
+        blockhash->block_height = msg->block_height;
 
         blockhash_t * hash = (blockhash_t *)msg->block_hash.uc;
         ctx->flush_pool_idx  = map_chain_idx_query_const( ctx->map_chain, &hash, ULONG_MAX, ctx->pool );
         ctx->flushing_slot   = msg->slot;
 
         ctx->completed_slot = msg->slot;
+        ctx->current_block_height = msg->block_height;
         break;
       }
       case REPLAY_SIG_ROOT_ADVANCED: {
@@ -524,7 +528,7 @@ after_frag( fd_resolv_ctx_t *   ctx,
   }
   if( FD_LIKELY( blockhash ) ) {
     txnm->reference_slot = blockhash->slot;
-    if( FD_UNLIKELY( txnm->reference_slot+151UL<ctx->completed_slot ) ) {
+    if( FD_UNLIKELY( ctx->current_block_height>blockhash->block_height+151UL ) ) {
       if( FD_UNLIKELY( txnm->block_engine.bundle_id ) ) ctx->bundle_failed = 1;
       ctx->metrics.blockhash_expired++;
       return;
@@ -608,7 +612,8 @@ unprivileged_init( fd_topo_t const *      topo,
   ctx->bundle_failed = 0;
   ctx->bundle_id     = 0UL;
 
-  ctx->completed_slot = 0UL;
+  ctx->completed_slot       = 0UL;
+  ctx->current_block_height = 0UL;
   ctx->blockhash_ring_idx = 0UL;
 
   ctx->flush_pool_idx = ULONG_MAX;

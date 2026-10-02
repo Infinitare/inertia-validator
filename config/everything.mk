@@ -1,4 +1,4 @@
-.PHONY: all info check bin rust include lib unit-test integration-test fuzz-test help clean distclean asm ppp show-deps proof
+.PHONY: all info check bin include lib unit-test integration-test fuzz-test help clean distclean asm ppp show-deps proof
 .PHONY: run-unit-test run-integration-test run-script-test run-fuzz-test
 .PHONY: seccomp-policies cov-report dist-cov-report frontend frontend-clean
 
@@ -96,12 +96,11 @@ help:
 	# "make all" is equivalent to "make bin include lib unit-test fuzz-test"
 	# "make info" makes build info $(OBJDIR)/info for the current platform (if not already made)
 	# "make check" quickly checks for obvious compile errors
-	# "make bin" makes all binaries for the current platform (except those requiring the Rust toolchain)
+	# "make bin" makes all binaries for the current platform
 	# "make include" makes all include files for the current platform
 	# "make lib" makes all libraries for the current platform
 	# "make unit-test" makes all unit-tests for the current platform
 	# "make integration-test" makes all integration-tests for the current platform
-	# "make rust" makes all binaries for the current platform that require the Rust toolchain
 	# "make run-unit-test" runs all unit-tests for the current platform. NOTE: this will not (re)build the test executables
 	# "make run-integration-test" runs all integration-tests for the current platform. NOTE: this will not (re)build the test executables
 	# "make help" prints this message
@@ -120,11 +119,11 @@ help:
 info: $(OBJDIR)/info
 
 clean: frontend-clean
-	$(RMDIR) $(OBJDIR) && $(RMDIR) target && $(RMDIR) agave/target && \
+	$(RMDIR) $(OBJDIR) && $(RMDIR) target && \
 $(SCRUB)
 
 distclean:
-	$(RMDIR) $(BASEDIR) && $(RMDIR) target && $(RMDIR) agave/target && \
+	$(RMDIR) $(BASEDIR) && $(RMDIR) target && \
 $(SCRUB)
 
 run-unit-test:
@@ -295,7 +294,6 @@ run-fuzz-test: $(1)_unit
 endef
 
 make-bin       = $(eval $(call _make-exe,$(1),$(2),$(3),bin,bin,$(4) $(LDFLAGS_EXE)))
-make-bin-rust  = $(eval $(call _make-exe,$(1),$(2),$(3),rust,bin,$(4) $(LDFLAGS_EXE)))
 make-shared    = $(eval $(call _make-exe,$(1),$(2),$(3),lib,lib,$(4) $(LDFLAGS_SO)))
 make-unit-test = $(eval $(call _make-exe,$(1),$(2),$(3),unit-test,unit-test,$(4) $(LDFLAGS_EXE)))
 run-unit-test  = $(eval $(call _run-unit-test,$(1)))
@@ -531,21 +529,14 @@ cov-report: $(OBJDIR)/cov/html/index.html
 dist-cov-report: $(BASEDIR)/cov/html/index.html
 	$(LCOV) --summary $(BASEDIR)/cov/cov.lcov
 
-# Builds the frontend bundle and bakes it into the binary.  There are two
-# independent GUI binaries with their own frontend bundle:
-#
-#   FRONTEND_CLIENT=Firedancer -> src/disco/gui      (full client)
-#   FRONTEND_CLIENT=Frankendancer -> src/discoh/guih (frankendancer)
-#
-# Each client has a single bundle, stored under its dist/ directory; there
-# are no longer per-channel (stable/alpha/dev) variants.
+# Builds the frontend bundle and bakes it into the binary.  Upstream also
+# builds a Frankendancer bundle from src/discoh/guih; this tree has only
+# the full client.
 FRONTEND_CLIENT := Firedancer
 ifeq ($(FRONTEND_CLIENT),Firedancer)
 FRONTEND_DIR := src/disco/gui
-else ifeq ($(FRONTEND_CLIENT),Frankendancer)
-FRONTEND_DIR := src/discoh/guih
 else
-$(error "unexpected FRONTEND_CLIENT (expected Firedancer or Frankendancer)")
+$(error "unexpected FRONTEND_CLIENT (expected Firedancer)")
 endif
 
 frontend: frontend-clean

@@ -1,13 +1,19 @@
 # Firedancer
 
-This repo contains two validator clients:
+This is a **Firedancer-only** fork.  Upstream ships two validator
+clients; this tree carries only the first:
 
 - **Firedancer** — A fully C-based Solana validator client.
-- **Frankendancer** — Legacy Rust/C hybrid validator.
+- **Frankendancer** — Legacy Rust/C hybrid validator. **Stripped out of
+  this repo**: no `agave` submodule, no `fdctl`, no `fddev`, no
+  `src/discoh`, and no Rust in the build.
 
-Unless prompted, only focus on Firedancer and avoid Frankendancer
-specific parts (fdctl, fddev, discoh).  Focus on Firedancer equivalents
-(firedancer-dev, discof).
+Do not reintroduce Frankendancer code.  Use the Firedancer equivalents
+(`firedancer`, `firedancer-dev`, `src/discof`).
+
+Merging from upstream re-introduces Frankendancer, so it is scripted —
+see `contrib/harmonic/README.md`.  After any upstream merge,
+`contrib/harmonic/strip-frankendancer.sh` must pass.
 
 Firedancer only supports x86-64 on Linux, other targets are not correct
 for example ARM due to TSO assumptions.

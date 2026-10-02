@@ -91,6 +91,7 @@ extern fd_topo_run_tile_t fd_tile_event;
 extern fd_topo_run_tile_t fd_tile_diag;
 extern fd_topo_run_tile_t fd_tile_gui;
 extern fd_topo_run_tile_t fd_tile_rpc;
+extern fd_topo_run_tile_t fd_tile_grpc;
 extern fd_topo_run_tile_t fd_tile_bundle;
 extern fd_topo_run_tile_t fd_tile_genesi;
 extern fd_topo_run_tile_t fd_tile_ipecho;
@@ -137,6 +138,7 @@ fd_topo_run_tile_t * TILES[] = {
   &fd_tile_diag,
   &fd_tile_gui,
   &fd_tile_rpc,
+  &fd_tile_grpc,
   &fd_tile_bundle,
   &fd_tile_gossvf,
   &fd_tile_gossip,
@@ -184,6 +186,7 @@ extern action_t fd_action_add_authorized_voter;
 extern action_t fd_action_remove_all_authorized_voters;
 extern action_t fd_action_set_identity;
 extern action_t fd_action_get_identity;
+extern action_t fd_action_set_strategy;
 extern action_t fd_action_ps;
 extern action_t fd_action_monitor_gossip;
 extern action_t fd_action_snapshot_create;
@@ -207,6 +210,7 @@ action_t * ACTIONS[] = {
   &fd_action_monitor_gossip,
   &fd_action_set_identity,
   &fd_action_get_identity,
+  &fd_action_set_strategy,
   &fd_action_ps,
   &fd_action_snapshot_create,
   NULL,
@@ -228,7 +232,7 @@ main( int     argc,
     NULL
   };
 
-  return fd_main( argc, argv, 1, configs, fd_topo_initialize );
+  return fd_main( argc, argv, configs, fd_topo_initialize );
 }
 
 /* Kind of a hack for now, we sometimes want to view bench generation
@@ -247,8 +251,7 @@ add_bench_topo( fd_topo_t  * topo,
                 ushort       send_to_port,
                 uint         send_to_ip_addr,
                 ushort       rpc_port,
-                uint         rpc_ip_addr,
-                int          reserve_agave_cores ) {
+                uint         rpc_ip_addr ) {
   (void)topo;
   (void)affinity;
   (void)benchg_tile_cnt;
@@ -262,5 +265,4 @@ add_bench_topo( fd_topo_t  * topo,
   (void)send_to_ip_addr;
   (void)rpc_port;
   (void)rpc_ip_addr;
-  (void)reserve_agave_cores;
 }

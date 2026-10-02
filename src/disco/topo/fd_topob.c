@@ -35,7 +35,6 @@ fd_topob_new( void * mem,
   topo->max_page_size           = FD_SHMEM_GIGANTIC_PAGE_SZ;
   topo->gigantic_page_threshold = 4 * FD_SHMEM_HUGE_PAGE_SZ;
 
-  topo->agave_affinity_cnt = 0;
   topo->blocklist_cores_cnt = 0;
 
   return topo;
@@ -438,6 +437,7 @@ static char const * ALWAYS[] = {
   "gui",    /* FIREDANCER only */
   "guih",   /* FRANK only */
   "rpc",    /* FIREDANCER only */
+  "grpc",   /* FIREDANCER only */
   "gossvf", /* FIREDANCER only */
   "gossip", /* FIREDANCER only */
   "repair", /* FIREDANCER only */
@@ -674,8 +674,7 @@ auto_tile_cpu( fd_topo_tile_t * tile,
 
 void
 fd_topob_auto_layout_cpus( fd_topo_t *      topo,
-                           fd_topo_cpus_t * cpus,
-                           int              reserve_agave_cores ) {
+                           fd_topo_cpus_t * cpus ) {
   /* Incredibly simple automatic layout system for now ... just assign
      tiles to CPU cores in NUMA sequential order, except for a few tiles
      which should be floating. */
@@ -759,11 +758,8 @@ fd_topob_auto_layout_cpus( fd_topo_t *      topo,
 
   /* If we have enough physical cores (excluding HT siblings) for all
      tiles that need assignment, exclude HT siblings so that no tile
-     gets scheduled on a hyperthread pair.
-     For Frankendancer, we reserve 2x cores so we have enough for Agave */
-  _Bool skip_ht_pairs = reserve_agave_cores
-    ? (available_physical>=2*tiles_to_assign) /* Frankendancer */
-    : (available_physical>=tiles_to_assign);  /* Firedancer */
+     gets scheduled on a hyperthread pair. */
+  _Bool skip_ht_pairs = available_physical>=tiles_to_assign;
 
   /* First, assign always-on tiles */
   ulong cpu_idx = 0UL;
@@ -813,25 +809,13 @@ fd_topob_auto_layout_cpus( fd_topo_t *      topo,
     if( FD_UNLIKELY( !found ) ) FD_LOG_WARNING(( "auto layout cannot affine tile `%s:%lu` because it is unknown. Leaving it floating", tile->name, tile->kind_id ));
   }
 
-  topo->agave_affinity_cnt = 0UL;
-  if( FD_UNLIKELY( reserve_agave_cores ) ) {
-    for( ulong i=cpu_idx; i<cpus->cpu_cnt; i++ ) {
-      if( FD_UNLIKELY( !cpus->cpu[ cpu_ordering[ i ] ].online ) ) continue;
-      if( FD_UNLIKELY( cpu_bv_test( cpu_assigned, cpu_ordering[ i ] ) ) ) continue;
-
-      if( FD_LIKELY( topo->agave_affinity_cnt<sizeof(topo->agave_affinity_cpu_idx)/sizeof(topo->agave_affinity_cpu_idx[0]) ) ) {
-        topo->agave_affinity_cpu_idx[ topo->agave_affinity_cnt++ ] = cpu_ordering[ i ];
-      }
-    }
-  }
 }
 
 void
-fd_topob_auto_layout( fd_topo_t * topo,
-                      int         reserve_agave_cores ) {
+fd_topob_auto_layout( fd_topo_t * topo ) {
   fd_topo_cpus_t cpus[1];
   fd_topo_cpus_init( cpus );
-  fd_topob_auto_layout_cpus( topo, cpus, reserve_agave_cores );
+  fd_topob_auto_layout_cpus( topo, cpus );
 }
 
 ulong

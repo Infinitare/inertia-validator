@@ -11,7 +11,7 @@
    or knowingly skipped) before the constant is bumped.  String keys of
    the user's own file are separately forced through the classification
    lists below. */
-FD_STATIC_ASSERT( sizeof(fd_config_t)==22964152UL, update_fd_config_to_json_for_the_layout_change );
+FD_STATIC_ASSERT( sizeof(fd_config_t)==22940176UL, update_fd_config_to_json_for_the_layout_change );
 
 #define REDACTED "[redacted]"
 
@@ -120,6 +120,7 @@ static char const * const jw_redacted_keys[] = {
   "net.bind_address",
   "tiles.quic.ssl_key_log_file",
   "tiles.bundle.url",
+  "tiles.bundle.tpu_url",
   "tiles.event.url",
   "tiles.shred.additional_shred_destinations_retransmit",
   "tiles.shred.additional_shred_destinations_leader",
@@ -127,6 +128,7 @@ static char const * const jw_redacted_keys[] = {
   "gossip.entrypoints",
   "tiles.gui.gui_listen_address",
   "tiles.rpc.rpc_listen_address",
+  "tiles.grpc.listen_address",
   "development.bundle.ssl_key_log_file",
   "development.ledger_input.path",
   "capture.dump_proto_dir",
@@ -161,6 +163,8 @@ static char const * const jw_reported_keys[] = {
   "net.xdp.listen_gre",
   "net.xdp.native_bond",
   "tiles.bundle.tls_domain_name",
+  "tiles.bundle.tpu_tls_domain_name",
+  "tiles.bundle.strategy",
   "tiles.bundle.tip_distribution_program_addr",
   "tiles.bundle.tip_payment_program_addr",
   "tiles.bundle.tip_distribution_authority",
@@ -290,7 +294,6 @@ ulong
 fd_config_to_json( fd_config_t const * config,
                    char *              buf,
                    ulong               buf_sz ) {
-  FD_TEST( config->is_firedancer );
   fd_configf_t const * f = &config->firedancer;
 
   jw_t w = { .buf = buf, .cur = buf, .rem = buf_sz, .fail = !buf_sz, .first = 1 };
@@ -307,7 +310,7 @@ fd_config_to_json( fd_config_t const * config,
   jw_bool ( &w, "is_live_cluster",   config->is_live_cluster );
   jw_ulong( &w, "uid",               config->uid );
   jw_ulong( &w, "gid",               config->gid );
-  jw_bool ( &w, "is_firedancer",     config->is_firedancer );
+  jw_bool ( &w, "is_firedancer",     1 );
   jw_bool ( &w, "is_dev",            config->is_dev );
   jw_bool ( &w, "has_user_config",   config->has_user_config );
   jw_str  ( &w, "action",            config->action );
@@ -565,6 +568,10 @@ fd_config_to_json( fd_config_t const * config,
       jw_ulong( &w, "commission_bps",                config->tiles.bundle.commission_bps );
       jw_ulong( &w, "keepalive_interval_millis",     config->tiles.bundle.keepalive_interval_millis );
       jw_bool ( &w, "tls_cert_verify",               config->tiles.bundle.tls_cert_verify );
+      jw_url  ( &w, "tpu_url",                       config->tiles.bundle.tpu_url );
+      jw_str  ( &w, "tpu_tls_domain_name",           config->tiles.bundle.tpu_tls_domain_name );
+      jw_bool ( &w, "inertia_block_mode",           config->tiles.bundle.inertia_block_mode );
+      jw_str  ( &w, "strategy",                      config->tiles.bundle.strategy );
     jw_obj_close( &w );
     jw_obj_open( &w, "pack" );
       jw_ulong( &w, "max_pending_transactions", config->tiles.pack.max_pending_transactions );
@@ -608,6 +615,14 @@ fd_config_to_json( fd_config_t const * config,
       jw_ulong( &w, "max_http_request_length",   config->tiles.rpc.max_http_request_length );
       jw_ulong( &w, "send_buffer_size_mb",       config->tiles.rpc.send_buffer_size_mb );
       jw_bool ( &w, "delay_startup",             config->tiles.rpc.delay_startup );
+    jw_obj_close( &w );
+    jw_obj_open( &w, "grpc" );
+      jw_bool ( &w, "enabled",                   config->tiles.grpc.enabled );
+      jw_path ( &w, "listen_address",            config->tiles.grpc.listen_address );
+      jw_ulong( &w, "listen_port",               config->tiles.grpc.listen_port );
+      jw_ulong( &w, "max_subscriptions",         config->tiles.grpc.max_subscriptions );
+      jw_ulong( &w, "tx_depth",                  config->tiles.grpc.tx_depth );
+      jw_ulong( &w, "send_buffer_size_mb",       config->tiles.grpc.send_buffer_size_mb );
     jw_obj_close( &w );
     jw_obj_open( &w, "repair" );
       jw_ulong( &w, "repair_client_listen_port", config->tiles.repair.repair_client_listen_port );

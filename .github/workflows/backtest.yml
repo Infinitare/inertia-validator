@@ -46,8 +46,6 @@ jobs:
 
       - uses: actions/checkout@v7
 
-      - uses: ./.github/actions/submodule-init
-
       - uses: ./.github/actions/deps
 
       - uses: ./.github/actions/hugepages

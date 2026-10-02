@@ -732,6 +732,11 @@ EXAMPLES
     <counter name="ShredstreamHeartbeatSent" summary="ShredStream heartbeats successfully sent" />
     <counter name="PingAcked" summary="HTTP/2 PINGs acknowledged by server" />
     <gauge name="State" summary="0=disconnected, 1=connecting, 2=connected, 3=sleeping" />
+    <gauge name="TpuConnected" summary="1 if connected to the TPU endpoint, 0 if not" />
+    <counter name="TpuPacketReceived" summary="Packets received from TPU endpoint" />
+    <counter name="TpuTransactionReceived" summary="Transactions received from TPU endpoint" />
+    <counter name="BlockReceived" summary="Blocks received" />
+    <counter name="BlockTransactionReceived" summary="Transactions received from blocks" />
     <gauge name="RttSampleNanos" summary="Latest RTT sample at scrape time, in nanoseconds" />
     <gauge name="RttSmoothedNanos" summary="RTT moving average, in nanoseconds" />
     <gauge name="RttVarianceNanos" summary="RTT variance, in nanoseconds" />
@@ -808,6 +813,7 @@ EXAMPLES
 
 <enum name="PackTxnInsertReturn">
     <!-- Note: You must keep the list of return values in fd_pack.h in sync with this list -->
+    <int value="-17" name="BlockFailed" label="Harmonic block insert rejected (wrong mode, slot, cutoff, or validation failed)" />
     <int value="-16" name="InstrAcctCnt" label="Transaction has an instruction that references too many accounts" />
     <int value="-15" name="NonceConflict" label="Bundle with two conflicting durable nonce transactions" />
     <int value="-14" name="AcctBlocklist" label="Transaction uses an account on the account blocklist" />
@@ -1780,6 +1786,23 @@ EXAMPLES
     <counter name="AccdbBytesRead" summary="Number of bytes read from the account database" />
     <counter name="AccdbReadOperation" summary="Number of read operations performed on the account database" />
     <counter name="AccdbBytesCopied" summary="Number of bytes copied out of the account database cache on a cache hit" />
+</tile>
+
+<tile name="grpc">
+    <gauge name="SubscriptionCount" summary="The number of active subscriptions to the gRPC streaming server" />
+    <counter name="ConnAccepted" summary="The total number of connections accepted by the gRPC streaming server" />
+    <counter name="ConnRejected" summary="The total number of connections rejected because the connection limit was reached" />
+    <counter name="ConnErr" summary="The total number of times accepting a connection failed" />
+    <counter name="StreamOpened" summary="The total number of gRPC streams opened" />
+    <counter name="StreamRejected" summary="The total number of gRPC streams rejected because of stream limits or an unimplemented path" />
+    <counter name="StreamEvicted" summary="The total number of subscribers disconnected for falling too far behind" />
+    <counter name="MsgStaged" summary="The total number of updates encoded" />
+    <counter name="MsgQueued" summary="The total number of updates queued to a subscriber, summed over subscribers" />
+    <counter name="MsgDropped" summary="The total number of updates that could not be encoded because the send buffer was too small" />
+    <counter name="MsgAbandoned" summary="The total number of updates that were staged but never broadcast" />
+    <counter name="TxnOversz" summary="The total number of matching transactions not sent because their encoding exceeded the message size limit" />
+    <counter name="BytesTx" summary="The total number of bytes written to all subscribers" />
+    <counter name="FragsDropped" summary="The total number of replay fragments missed because the tile fell behind, reported to subscribers as gaps" />
 </tile>
 
 <enum name="Softirq">

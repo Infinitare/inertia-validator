@@ -431,7 +431,7 @@ backtest_topo( config_t * config ) {
 
   if( FD_LIKELY( telemetry_enabled ) ) wire_event_links( topo );
 
-  // fd_topob_auto_layout( topo, 0 );
+  // fd_topob_auto_layout( topo );
   fd_topob_finish( topo, CALLBACKS );
 }
 

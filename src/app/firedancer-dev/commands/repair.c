@@ -489,7 +489,7 @@ repair_topo( config_t * config ) {
     fd_topo_configure_tile( tile, config );
   }
 
-  if( FD_UNLIKELY( is_auto_affinity ) ) fd_topob_auto_layout( topo, 0 );
+  if( FD_UNLIKELY( is_auto_affinity ) ) fd_topob_auto_layout( topo );
 
   fd_topob_finish( topo, CALLBACKS );
 

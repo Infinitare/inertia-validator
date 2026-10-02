@@ -88,8 +88,7 @@ update_config_for_dev( fd_config_t * config ) {
      exists and we don't know it.  If it doesn't exist, we'll keep it
      set to zero and get from gossip. */
   char genesis_path[ PATH_MAX ];
-  if( FD_LIKELY( config->is_firedancer ) ) fd_memcpy( genesis_path, config->paths.genesis, PATH_MAX );
-  else FD_TEST( fd_cstr_printf_check( genesis_path, PATH_MAX, NULL, "%s/genesis.bin", config->frankendancer.paths.ledger ) );
+  fd_memcpy( genesis_path, config->paths.genesis, PATH_MAX );
 
   ushort shred_version = 0;
   int result = read_genesis_bin( genesis_path, &shred_version, NULL );
@@ -123,9 +122,7 @@ run_firedancer_threaded( config_t * config,
   }
 
   initialize_accdb_fd( config );
-  if( FD_LIKELY( config->is_firedancer ) ) {
-    initialize_snapshot_fds( config );
-  }
+  initialize_snapshot_fds( config );
 
   /* This is kind of a hack, but we have to join all the workspaces as
      read-write if we are running things threaded.  The reason is that

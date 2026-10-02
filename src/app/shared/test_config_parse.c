@@ -9,12 +9,8 @@ static char const cfg_str_1[] =
   "  entrypoints = [\"208.91.106.45:8080\"]";
 
 static char const cfg_str_oversized_array[] =
-  "[ledger]\n"
-  "  account_indexes = [\"01234567890123456789012345678901\"]";
-
-static char const cfg_str_invalid_aliased_array[] =
-  "[consensus]\n"
-  "  authorized_voter_paths = [1]";
+  "[snapshots.sources.gossip]\n"
+  "  allow_list = [\"123456789012345678901234567890123456789012345\"]";
 
 static char const cfg_str_2[] =
   "wumbo = \"mini\"";
@@ -28,8 +24,7 @@ static char const cfg_str_5[] =
   "[development.genesis]\n"
   "  max_file_size_mib = 33";
 
-extern uchar const fdctl_default_config[];
-extern ulong const fdctl_default_config_sz;
+FD_IMPORT_BINARY( fdctl_default_config, "src/app/firedancer/config/default.toml" );
 
 static int
 genesis_max_file_size_is_valid( config_t * config,
@@ -84,7 +79,6 @@ main( int     argc,
                                 endpoint, endpoint ) );
 
   memset( config, 0, sizeof(config_t) );
-  config->is_firedancer = 1;
   pod = fd_pod_join( fd_pod_new( pod_mem, sizeof(pod_mem) ) );
   FD_TEST( fd_toml_parse( cfg_str_limits, cfg_str_limits_sz, pod, scratch, sizeof(scratch), NULL )==FD_TOML_SUCCESS );
   FD_TEST( fd_config_extract_pod( pod, config )==config );
@@ -92,16 +86,11 @@ main( int     argc,
   FD_TEST( !strcmp( config->firedancer.snapshots.sources.servers[0], endpoint ) );
   FD_TEST( !strcmp( config->tiles.bundle.url, endpoint ) );
 
-  /* Reject invalid direct and aliased array elements. */
+  /* Reject oversized array elements. */
 
   memset( config, 0, sizeof(config_t) );
   pod = fd_pod_join( fd_pod_new( pod_mem, sizeof(pod_mem) ) );
   FD_TEST( fd_toml_parse( cfg_str_oversized_array, sizeof(cfg_str_oversized_array)-1UL, pod, scratch, sizeof(scratch), NULL )==FD_TOML_SUCCESS );
-  FD_TEST( !fd_config_extract_pod( pod, config ) );
-
-  memset( config, 0, sizeof(config_t) );
-  pod = fd_pod_join( fd_pod_new( pod_mem, sizeof(pod_mem) ) );
-  FD_TEST( fd_toml_parse( cfg_str_invalid_aliased_array, sizeof(cfg_str_invalid_aliased_array)-1UL, pod, scratch, sizeof(scratch), NULL )==FD_TOML_SUCCESS );
   FD_TEST( !fd_config_extract_pod( pod, config ) );
 
   /* Reject unrecognized config keys */
@@ -125,7 +114,6 @@ main( int     argc,
 
   /* bzip2's avail_in and avail_out fields are uint. */
 
-  config->is_firedancer = 1;
   memset( &config->firedancer, 0, sizeof(config->firedancer) );
   config->firedancer.layout.sign_tile_count          = 2U;
   config->firedancer.layout.resolv_tile_count        = 1U;
@@ -176,7 +164,6 @@ main( int     argc,
   /* Parse runtime genesis limits */
 
   memset( config, 0, sizeof(config_t) );
-  config->is_firedancer = 1;
   pod = fd_pod_join( fd_pod_new( pod_mem, sizeof(pod_mem) ) );
   FD_TEST( fd_toml_parse( cfg_str_5, sizeof(cfg_str_5)-1, pod, scratch, sizeof(scratch), NULL ) == FD_TOML_SUCCESS );
   FD_TEST( fd_config_extract_pod( pod, config ) == config );

@@ -1418,6 +1418,8 @@ try_become_leader_ag( fd_replay_tile_t *        ctx,
   msg->ticks_per_slot      = bank->f.ticks_per_slot;
   msg->hashcnt_per_tick    = bank->f.slot_params.hashes_per_tick;
   msg->tick_duration_ns    = bank->f.slot_params.ns_per_slot_adjusted/msg->ticks_per_slot;
+  fd_pubkey_t const * next_slot_leader = fd_multi_epoch_leaders_get_leader_for_slot( ctx->mleaders, ctx->next_leader_slot+1UL );
+  msg->leader_next_slot = next_slot_leader && !memcmp( next_slot_leader->key, ctx->identity_pubkey->key, 32UL );
   msg->bundle->config[0]   = config[0];
   memcpy( msg->bundle->last_blockhash,     bank->f.poh.hash,      sizeof(fd_hash_t)   );
   memcpy( msg->bundle->tip_receiver_owner, tip_receiver_owner.uc, sizeof(fd_pubkey_t) );
@@ -1826,6 +1828,11 @@ try_become_leader( fd_replay_tile_t *  ctx,
 
   msg->total_skipped_ticks = msg->ticks_per_slot*(ctx->next_leader_slot-ctx->reset_slot);
   msg->epoch = fd_slot_to_epoch( &bank->f.epoch_schedule, ctx->next_leader_slot, NULL );
+
+  /* Check if we are also the leader for slot+1 (consecutive leader slots).
+     Used by pack to decide VOTE_ONLY vs SPRINT after harmonic block completes. */
+  fd_pubkey_t const * next_slot_leader = fd_multi_epoch_leaders_get_leader_for_slot( ctx->mleaders, ctx->next_leader_slot+1UL );
+  msg->leader_next_slot = next_slot_leader && !memcmp( next_slot_leader->key, ctx->identity_pubkey->key, 32UL );
 
   fd_cost_tracker_t const * cost_tracker = fd_bank_cost_tracker_query( bank );
 
@@ -4599,7 +4606,7 @@ unprivileged_init( fd_topo_t const *      topo,
              (fd_acct_addr_t const *)tile->replay.bundle.tip_distribution_program_addr,
              (fd_acct_addr_t const *)tile->replay.bundle.tip_payment_program_addr,
              (fd_acct_addr_t const *)ctx->bundle.vote_account.uc,
-             (fd_acct_addr_t const *)ctx->bundle.vote_account.uc, "NAN", 0UL ) ) ) {
+             (fd_acct_addr_t const *)ctx->bundle.vote_account.uc, 0UL ) ) ) {
       FD_LOG_ERR(( "failed to initialize bundle crank gen" ));
     }
   }

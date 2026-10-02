@@ -57,7 +57,7 @@ FD_AUTO_INSTALL_PACKAGES=1 ./deps.sh fetch check install
 Compile desired targets:
 
 ```bash
-make -j all fdctl fddev
+make -j all firedancer firedancer-dev
 ```
 
 ## GCC 12 AVX512 build example

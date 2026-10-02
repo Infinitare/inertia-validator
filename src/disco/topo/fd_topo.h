@@ -316,6 +316,11 @@ struct fd_topo_tile {
       ulong url_len;
       char  sni[ FD_SNI_BUF_MAX ];
       ulong sni_len;
+      /* Second gRPC endpoint (subscribePackets) for harmonic TPU stream */
+      char  tpu_url[ 256 ];
+      ulong tpu_url_len;
+      char  tpu_sni[ 256 ];
+      ulong tpu_sni_len;
       char  identity_key_path[ PATH_MAX ];
       char  key_log_path[ PATH_MAX ];
       ulong buf_sz;
@@ -323,6 +328,13 @@ struct fd_topo_tile {
       ulong ssl_heap_sz;
       ulong keepalive_interval_nanos;
       uchar tls_cert_verify : 1;
+      int   inertia_block_mode; /* If set, block bundles are accepted on the bundle
+                                    stream, identified by a decimal slot in
+                                    BundleUuid.uuid.  Normal bundles remain
+                                    active on the same stream. */
+
+      /* Block engine scheduling strategy for Harmonic block mode */
+      int   strategy;
     } bundle;
 
     struct {
@@ -356,6 +368,8 @@ struct fd_topo_tile {
         ulong commission_bps;
         char  identity_key_path[ PATH_MAX ];
         char  vote_account_path[ PATH_MAX ]; /* or pubkey is okay */
+        int   inertia_block_mode; /* If set, processes harmonic blocks */
+        int   strategy; /* block_engine_SchedulingStrategy for crank memo */
       } bundle;
       ulong acct_blocklist_cnt;
       fd_pubkey_t acct_blocklist[ FD_PACK_ACCT_BLOCKLIST_MAX ];
@@ -463,6 +477,15 @@ struct fd_topo_tile {
       char   snapshot_server_host[ FD_FQDN_BUF_MAX ];
       ushort snapshot_server_port;
     } rpc;
+
+    struct {
+      uint   listen_addr;
+      ushort listen_port;
+
+      ulong max_subscriptions;
+      ulong tx_depth;
+      ulong send_buffer_size_mb;
+    } grpc;
 
     struct {
       uint   prometheus_listen_addr;
@@ -830,8 +853,6 @@ struct fd_topo {
   fd_topo_tile_t tiles[ FD_TOPO_MAX_TILES ];
   fd_topo_obj_t  objs[ FD_TOPO_MAX_OBJS ];
 
-  ulong          agave_affinity_cnt;
-  ulong          agave_affinity_cpu_idx[ FD_TILE_MAX ];
   ulong          blocklist_cores_cnt;
   ulong          blocklist_cores_cpu_idx[ FD_TILE_MAX ];
 

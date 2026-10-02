@@ -138,36 +138,6 @@ create_clone_stack( void ) {
 
 
 static int
-execve_agave( int config_memfd,
-                    int pipefd ) {
-  if( FD_UNLIKELY( -1==fcntl( pipefd, F_SETFD, 0 ) ) ) FD_LOG_ERR(( "fcntl(F_SETFD,0) failed (%i-%s)", errno, fd_io_strerror( errno ) ));
-  pid_t child = fork();
-  if( FD_UNLIKELY( -1==child ) ) FD_LOG_ERR(( "fork() failed (%i-%s)", errno, fd_io_strerror( errno ) ));
-  if( FD_LIKELY( !child ) ) {
-    char _current_executable_path[ PATH_MAX ];
-    FD_TEST( -1!=fd_file_util_self_exe( _current_executable_path ) );
-
-    char config_fd[ 32 ];
-    FD_TEST( fd_cstr_printf_check( config_fd, sizeof( config_fd ), NULL, "%d", config_memfd ) );
-    char * args[ 5 ] = { _current_executable_path, "run-agave", "--config-fd", config_fd, NULL };
-
-    char * envp[] = { NULL, NULL };
-    char * google_creds = getenv( "GOOGLE_APPLICATION_CREDENTIALS" );
-    char provide_creds[ PATH_MAX+30UL ];
-    if( FD_UNLIKELY( google_creds ) ) {
-      FD_TEST( fd_cstr_printf_check( provide_creds, sizeof( provide_creds ), NULL, "GOOGLE_APPLICATION_CREDENTIALS=%s", google_creds ) );
-      envp[ 0 ] = provide_creds;
-    }
-
-    if( FD_UNLIKELY( -1==execve( _current_executable_path, args, envp ) ) ) FD_LOG_ERR(( "execve() failed (%i-%s)", errno, fd_io_strerror( errno ) ));
-  } else {
-    if( FD_UNLIKELY( -1==fcntl( pipefd, F_SETFD, FD_CLOEXEC ) ) ) FD_LOG_ERR(( "fcntl(F_SETFD,FD_CLOEXEC) failed (%i-%s)", errno, fd_io_strerror( errno ) ));
-    return child;
-  }
-  return 0;
-}
-
-static int
 cgroup_procs_write( char const * path ) {
   int fd = open( path, O_WRONLY );
   if( FD_UNLIKELY( fd<0 ) ) {
@@ -344,18 +314,6 @@ main_pid_namespace( void * _args ) {
   }
 
   ulong child_cnt = 0UL;
-  if( FD_LIKELY( !config->is_firedancer && !config->development.no_agave ) ) {
-    int pipefd[ 2 ];
-    if( FD_UNLIKELY( pipe2( pipefd, O_CLOEXEC ) ) ) FD_LOG_ERR(( "pipe2() failed (%i-%s)", errno, fd_io_strerror( errno ) ));
-    fds[ child_cnt ] = (struct pollfd){ .fd = pipefd[ 0 ], .events = 0 };
-    child_pids[ child_cnt ] = execve_agave( config_memfd, pipefd[ 1 ] );
-    FD_TEST( child_pids[ child_cnt ]>0 );
-    actual_pids[ child_cnt ] = (ulong)child_pids[ child_cnt ];
-    child_idxs[ child_cnt ] = ULONG_MAX;
-    if( FD_UNLIKELY( close( pipefd[ 1 ] ) ) ) FD_LOG_ERR(( "close() failed (%i-%s)", errno, fd_io_strerror( errno ) ));
-    strncpy( child_names[ child_cnt ], "agave", 32 );
-    child_cnt++;
-  }
 
   errno = 0;
   int save_priority = getpriority( PRIO_PROCESS, 0 );
@@ -369,14 +327,9 @@ main_pid_namespace( void * _args ) {
   }
 
   initialize_accdb_fd( config );
-  ulong snap_max                = 0UL;
-  int   snapshot_upload_enabled = 0;
-  int   snapshot_dio_enabled    = 0;
-  if( config->is_firedancer ) {
-    snap_max                = initialize_snapshot_fds( config );
-    snapshot_upload_enabled = fd_topo_find_tile( &config->topo, "snapsv", 0UL )!=ULONG_MAX;
-    snapshot_dio_enabled    = fd_topo_find_tile( &config->topo, "snapzp", 0UL )!=ULONG_MAX;
-  }
+  ulong snap_max                = initialize_snapshot_fds( config );
+  int   snapshot_upload_enabled = fd_topo_find_tile( &config->topo, "snapsv", 0UL )!=ULONG_MAX;
+  int   snapshot_dio_enabled    = fd_topo_find_tile( &config->topo, "snapzp", 0UL )!=ULONG_MAX;
 
   struct spawn_cgroup spawn_cg = {0};
 
@@ -411,55 +364,53 @@ main_pid_namespace( void * _args ) {
         }
       }
 
-      if( FD_LIKELY( config->is_firedancer ) ) {
-        int tile_uses_accdb    = 0;
-        int tile_uses_accdb_ro = 0;
-        for( ulong i=0UL; i<tile->uses_obj_cnt; i++ ) {
-          fd_topo_obj_t const * obj = &config->topo.objs[ tile->uses_obj_id[ i ] ];
-          if( FD_UNLIKELY( !strcmp( obj->name, "accdb" ) ) ) {
-            if( FD_UNLIKELY( tile->uses_obj_mode[ i ]==FD_SHMEM_JOIN_MODE_READ_ONLY ) ) tile_uses_accdb_ro = 1;
-            else                                                                        tile_uses_accdb    = 1;
-            break;
-          }
+      int tile_uses_accdb    = 0;
+      int tile_uses_accdb_ro = 0;
+      for( ulong i=0UL; i<tile->uses_obj_cnt; i++ ) {
+        fd_topo_obj_t const * obj = &config->topo.objs[ tile->uses_obj_id[ i ] ];
+        if( FD_UNLIKELY( !strcmp( obj->name, "accdb" ) ) ) {
+          if( FD_UNLIKELY( tile->uses_obj_mode[ i ]==FD_SHMEM_JOIN_MODE_READ_ONLY ) ) tile_uses_accdb_ro = 1;
+          else                                                                        tile_uses_accdb    = 1;
+          break;
         }
+      }
 
-        /* The gui joins the accdb shmem read-only (for partition stats)
-           but never reads account data from the on-disk file, so it does
-           not need the accounts.db fd.  Withhold it to keep the gui at
-           least privilege. */
-        if( FD_UNLIKELY( !strcmp( tile->name, "gui" ) ) ) tile_uses_accdb_ro = 0;
-        if( FD_UNLIKELY( !strcmp( tile->name, "snapmk" ) ) ) tile_uses_accdb = tile_uses_accdb_ro = 0;
+      /* The gui joins the accdb shmem read-only (for partition stats)
+         but never reads account data from the on-disk file, so it does
+         not need the accounts.db fd.  Withhold it to keep the gui at
+         least privilege. */
+      if( FD_UNLIKELY( !strcmp( tile->name, "gui" ) ) ) tile_uses_accdb_ro = 0;
+      if( FD_UNLIKELY( !strcmp( tile->name, "snapmk" ) ) ) tile_uses_accdb = tile_uses_accdb_ro = 0;
 
-        /* snapwr writes accdb pwrite()s without joining accdb shmem, so
-           it needs the RW fd despite not appearing as an accdb obj user
-           in the topology. */
-        if( FD_UNLIKELY( tile_uses_accdb || !strcmp( tile->name, "snapwr" ) ) ) {
-          if( FD_UNLIKELY( -1==fcntl( FD_ACCDB_FD_RW, F_SETFD, 0 ) ) ) FD_LOG_ERR(( "fcntl(F_SETFD,0) failed (%i-%s)", errno, fd_io_strerror( errno ) ));
-        } else {
-          if( FD_UNLIKELY( -1==fcntl( FD_ACCDB_FD_RW, F_SETFD, FD_CLOEXEC ) ) ) FD_LOG_ERR(( "fcntl(F_SETFD,FD_CLOEXEC) failed (%i-%s)", errno, fd_io_strerror( errno ) ));
-        }
+      /* snapwr writes accdb pwrite()s without joining accdb shmem, so
+         it needs the RW fd despite not appearing as an accdb obj user
+         in the topology. */
+      if( FD_UNLIKELY( tile_uses_accdb || !strcmp( tile->name, "snapwr" ) ) ) {
+        if( FD_UNLIKELY( -1==fcntl( FD_ACCDB_FD_RW, F_SETFD, 0 ) ) ) FD_LOG_ERR(( "fcntl(F_SETFD,0) failed (%i-%s)", errno, fd_io_strerror( errno ) ));
+      } else {
+        if( FD_UNLIKELY( -1==fcntl( FD_ACCDB_FD_RW, F_SETFD, FD_CLOEXEC ) ) ) FD_LOG_ERR(( "fcntl(F_SETFD,FD_CLOEXEC) failed (%i-%s)", errno, fd_io_strerror( errno ) ));
+      }
 
-        if( FD_UNLIKELY( tile_uses_accdb_ro ) ) {
-          if( FD_UNLIKELY( -1==fcntl( FD_ACCDB_FD_RO, F_SETFD, 0 ) ) ) FD_LOG_ERR(( "fcntl(F_SETFD,0) failed (%i-%s)", errno, fd_io_strerror( errno ) ));
-        } else {
-          if( FD_UNLIKELY( -1==fcntl( FD_ACCDB_FD_RO, F_SETFD, FD_CLOEXEC ) ) ) FD_LOG_ERR(( "fcntl(F_SETFD,FD_CLOEXEC) failed (%i-%s)", errno, fd_io_strerror( errno ) ));
-        }
+      if( FD_UNLIKELY( tile_uses_accdb_ro ) ) {
+        if( FD_UNLIKELY( -1==fcntl( FD_ACCDB_FD_RO, F_SETFD, 0 ) ) ) FD_LOG_ERR(( "fcntl(F_SETFD,0) failed (%i-%s)", errno, fd_io_strerror( errno ) ));
+      } else {
+        if( FD_UNLIKELY( -1==fcntl( FD_ACCDB_FD_RO, F_SETFD, FD_CLOEXEC ) ) ) FD_LOG_ERR(( "fcntl(F_SETFD,FD_CLOEXEC) failed (%i-%s)", errno, fd_io_strerror( errno ) ));
+      }
 
-        int tile_uses_snap_fd     = !strcmp( tile->name, "snapct" ) ||
-                                    !strcmp( tile->name, "snapmk" );
-        int tile_uses_snap_dio_fd = !strcmp( tile->name, "snapzp" );
-        int tile_uses_snap_rd_fd  = !strcmp( tile->name, "snapsv" );
-        for( ulong j=0UL; j<snap_max; j++ ) {
-          if( FD_UNLIKELY( -1==fcntl( FD_SNAP_FD( j ), F_SETFD, tile_uses_snap_fd ? 0 : FD_CLOEXEC ) ) )
+      int tile_uses_snap_fd     = !strcmp( tile->name, "snapct" ) ||
+                                  !strcmp( tile->name, "snapmk" );
+      int tile_uses_snap_dio_fd = !strcmp( tile->name, "snapzp" );
+      int tile_uses_snap_rd_fd  = !strcmp( tile->name, "snapsv" );
+      for( ulong j=0UL; j<snap_max; j++ ) {
+        if( FD_UNLIKELY( -1==fcntl( FD_SNAP_FD( j ), F_SETFD, tile_uses_snap_fd ? 0 : FD_CLOEXEC ) ) )
+          FD_LOG_ERR(( "fcntl(F_SETFD) failed (%i-%s)", errno, fd_io_strerror( errno ) ));
+        if( snapshot_dio_enabled ) {
+          if( FD_UNLIKELY( -1==fcntl( FD_SNAP_DIO_FD( j ), F_SETFD, tile_uses_snap_dio_fd ? 0 : FD_CLOEXEC ) ) )
             FD_LOG_ERR(( "fcntl(F_SETFD) failed (%i-%s)", errno, fd_io_strerror( errno ) ));
-          if( snapshot_dio_enabled ) {
-            if( FD_UNLIKELY( -1==fcntl( FD_SNAP_DIO_FD( j ), F_SETFD, tile_uses_snap_dio_fd ? 0 : FD_CLOEXEC ) ) )
-              FD_LOG_ERR(( "fcntl(F_SETFD) failed (%i-%s)", errno, fd_io_strerror( errno ) ));
-          }
-          if( snapshot_upload_enabled ) {
-            if( FD_UNLIKELY( -1==fcntl( FD_SNAP_RO_FD( j ), F_SETFD, tile_uses_snap_rd_fd ? 0 : FD_CLOEXEC ) ) )
-              FD_LOG_ERR(( "fcntl(F_SETFD) failed (%i-%s)", errno, fd_io_strerror( errno ) ));
-          }
+        }
+        if( snapshot_upload_enabled ) {
+          if( FD_UNLIKELY( -1==fcntl( FD_SNAP_RO_FD( j ), F_SETFD, tile_uses_snap_rd_fd ? 0 : FD_CLOEXEC ) ) )
+            FD_LOG_ERR(( "fcntl(F_SETFD) failed (%i-%s)", errno, fd_io_strerror( errno ) ));
         }
       }
 
@@ -494,16 +445,14 @@ main_pid_namespace( void * _args ) {
     }
   }
 
-  if( FD_LIKELY( config->is_firedancer ) ) {
-    if( FD_UNLIKELY( -1==close( FD_ACCDB_FD_RW ) ) ) FD_LOG_ERR(( "close() failed (%i-%s)", errno, fd_io_strerror( errno ) ));
-    if( FD_UNLIKELY( -1==close( FD_ACCDB_FD_RO ) ) ) FD_LOG_ERR(( "close() failed (%i-%s)", errno, fd_io_strerror( errno ) ));
-    for( ulong j=0UL; j<snap_max; j++ ) {
-      if( FD_UNLIKELY( -1==close( FD_SNAP_FD( j ) ) ) )     FD_LOG_ERR(( "close() failed (%i-%s)", errno, fd_io_strerror( errno ) ));
-      if( snapshot_dio_enabled )
-        if( FD_UNLIKELY( -1==close( FD_SNAP_DIO_FD( j ) ) ) ) FD_LOG_ERR(( "close() failed (%i-%s)", errno, fd_io_strerror( errno ) ));
-      if( snapshot_upload_enabled )
-        if( FD_UNLIKELY( -1==close( FD_SNAP_RO_FD( j ) ) ) ) FD_LOG_ERR(( "close() failed (%i-%s)", errno, fd_io_strerror( errno ) ));
-    }
+  if( FD_UNLIKELY( -1==close( FD_ACCDB_FD_RW ) ) ) FD_LOG_ERR(( "close() failed (%i-%s)", errno, fd_io_strerror( errno ) ));
+  if( FD_UNLIKELY( -1==close( FD_ACCDB_FD_RO ) ) ) FD_LOG_ERR(( "close() failed (%i-%s)", errno, fd_io_strerror( errno ) ));
+  for( ulong j=0UL; j<snap_max; j++ ) {
+    if( FD_UNLIKELY( -1==close( FD_SNAP_FD( j ) ) ) )     FD_LOG_ERR(( "close() failed (%i-%s)", errno, fd_io_strerror( errno ) ));
+    if( snapshot_dio_enabled )
+      if( FD_UNLIKELY( -1==close( FD_SNAP_DIO_FD( j ) ) ) ) FD_LOG_ERR(( "close() failed (%i-%s)", errno, fd_io_strerror( errno ) ));
+    if( snapshot_upload_enabled )
+      if( FD_UNLIKELY( -1==close( FD_SNAP_RO_FD( j ) ) ) ) FD_LOG_ERR(( "close() failed (%i-%s)", errno, fd_io_strerror( errno ) ));
   }
 
   int allow_fds[ 6+FD_TOPO_MAX_TILES ];
@@ -958,14 +907,6 @@ run_firedancer_init( config_t * config,
   if( FD_UNLIKELY( -1==err && errno==ENOENT ) ) FD_LOG_ERR(( "[consensus.identity_path] key does not exist `%s`. You can generate an identity key at this path by running `%s keys new %s --config <toml>`", config->paths.identity_key, FD_BINARY_NAME, config->paths.identity_key ));
   else if( FD_UNLIKELY( -1==err ) )             FD_LOG_ERR(( "could not stat [consensus.identity_path] `%s` (%i-%s)", config->paths.identity_key, errno, fd_io_strerror( errno ) ));
 
-  if( FD_UNLIKELY( !config->is_firedancer ) ) {
-    for( ulong i=0UL; i<config->frankendancer.paths.authorized_voter_paths_cnt; i++ ) {
-      err = stat( config->frankendancer.paths.authorized_voter_paths[ i ], &st );
-      if( FD_UNLIKELY( -1==err && errno==ENOENT ) ) FD_LOG_ERR(( "[consensus.authorized_voter_paths] key does not exist `%s`", config->frankendancer.paths.authorized_voter_paths[ i ] ));
-      else if( FD_UNLIKELY( -1==err ) )             FD_LOG_ERR(( "could not stat [consensus.authorized_voter_paths] `%s` (%i-%s)", config->frankendancer.paths.authorized_voter_paths[ i ], errno, fd_io_strerror( errno ) ));
-    }
-  }
-
   /* FIXME: fdctl_check_configure unconditionally checks for network
             stack prerequisites even if the command being run does not
             require networking.  Hack around that here for now. */
@@ -977,8 +918,6 @@ run_firedancer_init( config_t * config,
 
 void
 initialize_accdb_fd( config_t const * config ) {
-  if( FD_UNLIKELY( !config->is_firedancer ) ) return;
-
   /* O_TRUNC of a previous run's accounts.db frees all its extents
      synchronously.  In development skip the truncate to keep reboots
      fast. */
@@ -1218,7 +1157,6 @@ initialize_snapshot_fds( config_t const * config ) {
 
    + main
    +-- pidns
-       +-- agave
        +-- tile 0
        +-- tile 1
        ...
@@ -1232,7 +1170,7 @@ initialize_snapshot_fds( config_t const * config ) {
     (b) main is the parent of pidns, so it can issue a waitpid() on the
         child PID, and when it completes terminate itself.
 
-    (c) pidns is the parent of agave and the tiles, so it could
+    (c) pidns is the parent of the tiles, so it could
         issue a waitpid() of -1 to wait for any of them to terminate,
         but how would it know if main has died?
 

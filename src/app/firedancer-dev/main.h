@@ -97,6 +97,7 @@ extern fd_topo_run_tile_t fd_tile_event;
 extern fd_topo_run_tile_t fd_tile_diag;
 extern fd_topo_run_tile_t fd_tile_gui;
 extern fd_topo_run_tile_t fd_tile_rpc;
+extern fd_topo_run_tile_t fd_tile_grpc;
 extern fd_topo_run_tile_t fd_tile_bencho;
 extern fd_topo_run_tile_t fd_tile_benchg;
 extern fd_topo_run_tile_t fd_tile_benchs;
@@ -151,6 +152,7 @@ fd_topo_run_tile_t * TILES[] = {
   &fd_tile_diag,
   &fd_tile_gui,
   &fd_tile_rpc,
+  &fd_tile_grpc,
   &fd_tile_bencho,
   &fd_tile_benchg,
   &fd_tile_benchs,
@@ -201,6 +203,7 @@ extern action_t fd_action_mem;
 extern action_t fd_action_netconf;
 extern action_t fd_action_set_identity;
 extern action_t fd_action_get_identity;
+extern action_t fd_action_set_strategy;
 extern action_t fd_action_ps;
 extern action_t fd_action_version;
 extern action_t fd_action_bench;
@@ -246,6 +249,7 @@ action_t * ACTIONS[] = {
   &fd_action_netconf,
   &fd_action_set_identity,
   &fd_action_get_identity,
+  &fd_action_set_strategy,
   &fd_action_ps,
   &fd_action_help,
   &fd_action_metrics,
