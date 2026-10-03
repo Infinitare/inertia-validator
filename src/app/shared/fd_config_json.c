@@ -134,11 +134,6 @@ static char const * const jw_redacted_keys[] = {
   "capture.dump_proto_dir",
   "capture.dump_syscall_name_filter",
   "capture.solcap_capture",
-  /* legacy aliases accepted by the extractor but not in default.toml */
-  "consensus.identity_path",
-  "consensus.vote_account_path",
-  "ledger.path",
-  "scratch_directory",
 };
 
 static char const * const jw_reported_keys[] = {
