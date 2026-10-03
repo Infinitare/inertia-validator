@@ -677,7 +677,7 @@ unprivileged_init( fd_topo_t const *      topo,
 
   ctx->my_contact_info->outset = (ulong)FD_NANOSEC_TO_MICRO( tile->gossip.boot_timestamp_nanos );
 
-  ctx->my_contact_info->version.client      = FD_GOSSIP_CONTACT_INFO_CLIENT_HARMONIC_FD;
+  ctx->my_contact_info->version.client      = FD_GOSSIP_CONTACT_INFO_CLIENT_FIREDANCER;
   ctx->my_contact_info->version.major       = (ushort)fd_major_version;
   ctx->my_contact_info->version.minor       = (ushort)fd_minor_version;
   ctx->my_contact_info->version.patch       = (ushort)fd_patch_version;

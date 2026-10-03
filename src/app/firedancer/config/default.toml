@@ -1543,11 +1543,13 @@ telemetry = true
         # remain active on the same stream.
         inertia_block_mode = false
 
-        # Scheduling strategy to request from the block engine.  It is
-        # also written as a three byte tag into the memo instruction of
-        # the tip payment crank transaction.  "fba" (frequent batch
-        # auction: discrete batches ordered by priority fees and tips) is
-        # the only accepted value.
+        # Scheduling strategy to request from the block engine.  With
+        # inertia_block_mode it is also written as a three byte tag into
+        # the memo instruction of the tip payment crank transaction;
+        # otherwise the memo carries the pack schedule strategy, as
+        # upstream does.  "fba" (frequent batch auction: discrete
+        # batches ordered by priority fees and tips) is the only
+        # accepted value.
         strategy = "fba"
 
     # The pack tile takes incoming transactions that have been verified

@@ -341,10 +341,10 @@ pack_crank_refresh_memo( fd_pack_ctx_t * ctx,
                          int             harmonic_state ) {
   char const * memo;
   if( ctx->harmonic &&
-      (harmonic_state==HARMONIC_MODE_SPRINT || harmonic_state==HARMONIC_MODE_FAILED) ) {
-    memo = pack_schedule_strategy_memo( ctx->strategy );
-  } else {
+      !(harmonic_state==HARMONIC_MODE_SPRINT || harmonic_state==HARMONIC_MODE_FAILED) ) {
     memo = pack_crank_strategy_memo( ctx->runtime_cfg->harmonic_strategy );
+  } else {
+    memo = pack_schedule_strategy_memo( ctx->strategy );
   }
   fd_bundle_crank_gen_set_memo( ctx->crank->gen, memo );
 }
