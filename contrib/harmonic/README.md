@@ -146,6 +146,7 @@ re-apply the one-line change.
 | `config/extra/with-blst.mk` | Comment reworded; upstream explains the trailing archive in terms of `fdctl` linking Agave |
 | `deps.sh` | No rustup install; the C build needs no Rust toolchain |
 | `book/.vitepress/config.mts` | Dropped the Frankendancer CLI sidebar entry |
+| `.github/dependabot.yml` | Deleted; dependency bumps come from upstream merges, not this fork.  If a merge conflicts on it, keep it deleted |
 | `book/guide/*.md`, `doc/*`, `contrib/containers/README.md`, `CLAUDE.md` | `fdctl` paths and targets point at the Firedancer equivalents |
 
 ### The Frankendancer config section
