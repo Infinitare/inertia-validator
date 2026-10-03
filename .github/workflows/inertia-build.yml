@@ -59,7 +59,7 @@ jobs:
 
       - name: Build dependencies
         if: steps.deps-cache.outputs.cache-hit != 'true'
-        run: ./deps.sh +dev fetch install
+        run: ./deps.sh fetch install
 
       # `make check` runs the compiler with -fsyntax-only over every
       # translation unit.  No linking, no test binaries: the cheapest
@@ -97,7 +97,7 @@ jobs:
 
       - name: Build dependencies
         if: steps.deps-cache.outputs.cache-hit != 'true'
-        run: ./deps.sh +dev fetch install
+        run: ./deps.sh fetch install
 
       - name: Build binaries, libraries and unit tests
         run: make -j "$(nproc)" all

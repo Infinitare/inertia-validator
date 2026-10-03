@@ -72,7 +72,7 @@ jobs:
           set -e
           sudo apt-get update
           FD_AUTO_INSTALL_PACKAGES=1 ./deps.sh check
-          CC=gcc CXX=g++ FD_AUTO_INSTALL_PACKAGES=1 ./deps.sh +dev fetch install
+          CC=gcc CXX=g++ FD_AUTO_INSTALL_PACKAGES=1 ./deps.sh fetch install
 
       - name: Build release binary
         run: |
