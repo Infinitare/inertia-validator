@@ -47,7 +47,7 @@ jobs:
       # contrib/deps-bundle.sh ships -- so the cache stays small.
       - name: Cache dependency prefix
         id: deps-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             opt/include
@@ -85,7 +85,7 @@ jobs:
 
       - name: Cache dependency prefix
         id: deps-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             opt/include
