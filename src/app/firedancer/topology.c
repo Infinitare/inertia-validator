@@ -1730,7 +1730,6 @@ fd_topo_configure_tile( fd_topo_tile_t * tile,
       PARSE_BUNDLE_PUBKEY( pack, tip_payment_program_addr      );
       PARSE_BUNDLE_PUBKEY( pack, tip_distribution_authority    );
       tile->pack.bundle.commission_bps = config->tiles.bundle.commission_bps;
-      tile->pack.bundle.inertia_block_mode = config->tiles.bundle.inertia_block_mode;
       tile->pack.bundle.strategy = config->tiles.bundle.strategy_enum;
       fd_cstr_ncpy( tile->pack.bundle.identity_key_path, config->paths.identity_key, sizeof(tile->pack.bundle.identity_key_path) );
       fd_cstr_ncpy( tile->pack.bundle.vote_account_path, config->paths.vote_account, sizeof(tile->pack.bundle.vote_account_path) );
@@ -1915,7 +1914,6 @@ fd_topo_configure_tile( fd_topo_tile_t * tile,
     tile->bundle.tpu_url_len = strnlen( tile->bundle.tpu_url, 255 );
     fd_cstr_ncpy( tile->bundle.tpu_sni, config->tiles.bundle.tpu_tls_domain_name, 256 );
     tile->bundle.tpu_sni_len = strnlen( tile->bundle.tpu_sni, 255 );
-    tile->bundle.inertia_block_mode = config->tiles.bundle.inertia_block_mode;
     tile->bundle.strategy = config->tiles.bundle.strategy_enum;
 
   } else if( FD_UNLIKELY( !strcmp( tile->name, "solcap" ) ) ) {

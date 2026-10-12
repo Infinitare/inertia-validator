@@ -11,7 +11,7 @@
    or knowingly skipped) before the constant is bumped.  String keys of
    the user's own file are separately forced through the classification
    lists below. */
-FD_STATIC_ASSERT( sizeof(fd_config_t)==22940176UL, update_fd_config_to_json_for_the_layout_change );
+FD_STATIC_ASSERT( sizeof(fd_config_t)==22940168UL, update_fd_config_to_json_for_the_layout_change );
 
 #define REDACTED "[redacted]"
 
@@ -565,7 +565,6 @@ fd_config_to_json( fd_config_t const * config,
       jw_bool ( &w, "tls_cert_verify",               config->tiles.bundle.tls_cert_verify );
       jw_url  ( &w, "tpu_url",                       config->tiles.bundle.tpu_url );
       jw_str  ( &w, "tpu_tls_domain_name",           config->tiles.bundle.tpu_tls_domain_name );
-      jw_bool ( &w, "inertia_block_mode",           config->tiles.bundle.inertia_block_mode );
       jw_str  ( &w, "strategy",                      config->tiles.bundle.strategy );
     jw_obj_close( &w );
     jw_obj_open( &w, "pack" );
