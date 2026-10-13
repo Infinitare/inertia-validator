@@ -138,6 +138,7 @@ lockout_interval_key( ulong fork_slot,
 #define THRESHOLD_DEPTH (8)
 #define THRESHOLD_RATIO (2.0 / 3.0)
 #define SWITCH_RATIO    (0.38)
+#define GAP_CONF        (3UL) /* a gap of up to (1<<GAP_CONF)-1 slots on our fork expires no vote */
 
 ulong
 fd_tower_align( void ) {
@@ -349,6 +350,27 @@ simulate_vote( fd_tower_vote_t const * votes,
   return cnt;
 }
 
+static inline ulong
+top_conf( fd_tower_vote_t const * top,
+          ulong                   slot ) {
+  ulong conf = 2UL;
+  while( FD_UNLIKELY( top->slot+(1UL<<conf)<slot ) ) conf++;
+  return conf;
+}
+
+static ulong
+retain_cnt( fd_tower_t * tower,
+            ulong        slot ) {
+  ulong tot = fd_tower_vote_cnt( tower->votes );
+  ulong cnt = simulate_vote( tower->votes, slot );
+  if( FD_LIKELY( cnt==tot ) ) return cnt;
+
+  /* a short gap on our own fork expires nothing */
+  ulong top = fd_tower_vote_peek_tail_const( tower->votes )->slot;
+  if( FD_LIKELY( slot<=top+(1UL<<GAP_CONF) && fd_tower_blocks_is_slot_descendant( tower, top, slot ) ) ) return tot;
+  return cnt;
+}
+
 /* push_vote pushes a new vote for slot onto the tower.  Pops and
    returns the new root (bottom of the tower) if it reaches max lockout
    as a result of the new vote.  Otherwise, returns ULONG_MAX.
@@ -368,9 +390,9 @@ push_vote( fd_tower_t * tower,
   fd_tower_vote_t const * vote = fd_tower_vote_peek_tail_const( tower->votes );
   if( FD_UNLIKELY( vote && slot <= vote->slot ) ) FD_LOG_CRIT(( "[%s] slot %lu <= vote->slot %lu", __func__, slot, vote->slot ));
 
-  /* Use simulate_vote to determine how many expired votes to pop. */
+  /* Use retain_cnt to determine how many expired votes to pop. */
 
-  ulong cnt = simulate_vote( tower->votes, slot );
+  ulong cnt = retain_cnt( tower, slot );
 
   /* Pop everything that got expired. */
 
@@ -389,15 +411,20 @@ push_vote( fd_tower_t * tower,
   }
 
   /* Increment confirmations (double lockouts) for consecutive
-     confirmations in prior votes. */
+     confirmations in prior votes.  A vote kept across a gap needs
+     enough to lock out past slot, which can root one more vote. */
 
-  ulong prev_conf = 0;
-  for( fd_tower_vote_iter_t iter = fd_tower_vote_iter_init_rev( tower->votes       );
-                                  !fd_tower_vote_iter_done_rev( tower->votes, iter );
-                            iter = fd_tower_vote_iter_prev    ( tower->votes, iter ) ) {
-    fd_tower_vote_t * vote = fd_tower_vote_iter_ele( tower->votes, iter );
-    if( FD_UNLIKELY( vote->conf != ++prev_conf ) ) break;
-    vote->conf++;
+  fd_tower_vote_t const * top = fd_tower_vote_peek_tail_const( tower->votes );
+  if( FD_LIKELY( top ) ) {
+    ulong conf = top_conf( top, slot );
+    for( fd_tower_vote_iter_t iter = fd_tower_vote_iter_init_rev( tower->votes       );
+                                    !fd_tower_vote_iter_done_rev( tower->votes, iter );
+                              iter = fd_tower_vote_iter_prev    ( tower->votes, iter ) ) {
+      fd_tower_vote_t * vote = fd_tower_vote_iter_ele( tower->votes, iter );
+      if( FD_UNLIKELY( vote->conf>=conf ) ) break;
+      vote->conf = conf++;
+    }
+    while( FD_UNLIKELY( fd_tower_vote_peek_head_const( tower->votes )->conf>FD_TOWER_VOTE_MAX ) ) root = fd_tower_vote_pop_head( tower->votes ).slot;
   }
 
   /* Add the new vote to the tower. */
@@ -685,7 +712,7 @@ switch_check( fd_tower_t * tower,
    long time from counting towards the threshold stake. */
 
 static int
-threshold_check( fd_tower_t const *     tower,
+threshold_check( fd_tower_t *           tower,
                  fd_tower_vtr_t const * accts,
                  ulong                  total_stake,
                  ulong                  slot ) {
@@ -693,7 +720,7 @@ threshold_check( fd_tower_t const *     tower,
   /* First, simulate a vote on our tower, popping off everything that
      would be expired by voting for slot. */
 
-  ulong cnt = simulate_vote( tower->votes, slot );
+  ulong cnt = retain_cnt( tower, slot );
 
   /* We can always vote if our tower is not at least THRESHOLD_DEPTH
      deep after simulating. */
@@ -701,9 +728,15 @@ threshold_check( fd_tower_t const *     tower,
   if( FD_UNLIKELY( cnt < THRESHOLD_DEPTH ) ) return 1;
 
   /* Get the vote slot from THRESHOLD_DEPTH back. Note THRESHOLD_DEPTH
-     is the 8th index back _including_ the simulated vote at index 0. */
+     is the 8th index back _including_ the simulated vote at index 0.
+     A vote kept across a gap can double lockouts once more, so check
+     the vote that ends up with the threshold lockout. */
 
-  ulong threshold_slot  = fd_tower_vote_peek_index_const( tower->votes, cnt - THRESHOLD_DEPTH )->slot;
+  fd_tower_vote_t const * top   = fd_tower_vote_peek_index_const( tower->votes, cnt - 1 );
+  ulong                   depth = THRESHOLD_DEPTH;
+  if( FD_UNLIKELY( expiration_slot( top )<slot ) ) depth -= top_conf( top, slot )-2UL;
+
+  ulong threshold_slot  = fd_tower_vote_peek_index_const( tower->votes, cnt - depth )->slot;
   ulong threshold_stake = 0;
   for( fd_tower_vtr_iter_t iter = fd_tower_vtr_iter_init( accts       );
                                  !fd_tower_vtr_iter_done( accts, iter );

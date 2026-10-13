@@ -127,6 +127,218 @@ test_vote( void ) {
   FD_TEST( expected_vote_root.conf == actual_vote_root->conf );
 }
 
+static int
+tower_valid( fd_tower_vote_t const * votes ) {
+  /* the vote program's ordering and lockout checks on a TowerSync */
+  fd_tower_vote_t const * prev = NULL;
+  for( fd_tower_vote_iter_t iter = fd_tower_vote_iter_init( votes       );
+                                  !fd_tower_vote_iter_done( votes, iter );
+                            iter = fd_tower_vote_iter_next( votes, iter ) ) {
+    fd_tower_vote_t const * vote = fd_tower_vote_iter_ele_const( votes, iter );
+    if( !vote->conf || vote->conf>FD_TOWER_VOTE_MAX ) return 0;
+    if( prev && ( vote->slot<=prev->slot || vote->conf>=prev->conf || vote->slot>expiration_slot( prev ) ) ) return 0;
+    prev = vote;
+  }
+  return 1;
+}
+
+static int
+tower_accepts( fd_tower_vote_t const * old,
+               ulong                   old_cnt,
+               ulong                   old_root,
+               fd_tower_vote_t const * votes,
+               ulong                   root ) {
+  /* the vote program's checks against the tower already on chain */
+  if( old_root!=ULONG_MAX && ( root==ULONG_MAX || root<old_root ) ) return 0;
+  if( root!=ULONG_MAX && fd_tower_vote_peek_head_const( votes )->slot<=root ) return 0;
+  ulong idx = 0UL;
+  for( ulong i=0UL; i<old_cnt; i++ ) {
+    if( root!=ULONG_MAX && old[ i ].slot<=root ) continue;
+    while( fd_tower_vote_peek_index_const( votes, idx )->slot<old[ i ].slot ) idx++;
+    fd_tower_vote_t const * vote = fd_tower_vote_peek_index_const( votes, idx );
+    if( vote->slot==old[ i ].slot ) { if( vote->conf<old[ i ].conf ) return 0; }
+    else if( expiration_slot( &old[ i ] )>=vote->slot ) return 0;
+  }
+  return 1;
+}
+
+static void
+check_vote( fd_tower_t const * tower,
+            ulong              idx,
+            ulong              slot,
+            ulong              conf ) {
+  fd_tower_vote_t const * vote = fd_tower_vote_peek_index_const( tower->votes, idx );
+  FD_TEST( vote->slot==slot );
+  FD_TEST( vote->conf==conf );
+}
+
+void
+test_vote_gap( fd_wksp_t * wksp ) {
+  ulong        blk_max   = 128;
+  ulong        vtr_max   = 2;
+  void *       tower_mem = fd_wksp_alloc_laddr( wksp, fd_tower_align(), fd_tower_footprint( blk_max, vtr_max ), 1UL );
+  fd_tower_t * tower     = fd_tower_join( fd_tower_new( tower_mem, blk_max, vtr_max, 0UL ) );
+  FD_TEST( tower );
+
+  /* 4 skipped slots under a full tower: nothing expires, the vote
+     before the gap is confirmed twice and two votes are rooted. */
+
+  for( ulong s=1UL; s<=31UL; s++ ) push_vote( tower, s );
+  fd_tower_blocks_insert( tower, 36UL, 31UL );
+  FD_TEST( simulate_vote( tower->votes, 36UL )==29UL );
+  FD_TEST( retain_cnt   ( tower,        36UL )==31UL );
+  FD_TEST( push_vote    ( tower,        36UL )==2UL  );
+  FD_TEST( fd_tower_vote_cnt( tower->votes )==30UL );
+  for( ulong i=0UL; i<29UL; i++ ) check_vote( tower, i, i+3UL, 31UL-i );
+  check_vote( tower, 29UL, 36UL, 1UL );
+  FD_TEST( tower_valid( tower->votes ) );
+
+  /* The kept votes lock us out of a fork that leaves them behind. */
+
+  fd_tower_blocks_insert( tower, 40UL, 29UL );
+  fd_tower_blocks_insert( tower, 47UL, 40UL );
+  FD_TEST( !lockout_check( tower, 40UL ) );
+  FD_TEST(  lockout_check( tower, 47UL ) );
+
+  /* The vote after the gap leaves the tower as if no slot was skipped. */
+
+  fd_tower_blocks_insert( tower, 37UL, 36UL );
+  FD_TEST( push_vote( tower, 37UL )==ULONG_MAX );
+  FD_TEST( fd_tower_vote_cnt( tower->votes )==31UL );
+  for( ulong i=0UL; i<29UL; i++ ) check_vote( tower, i, i+3UL, 31UL-i );
+  check_vote( tower, 29UL, 36UL, 2UL );
+  check_vote( tower, 30UL, 37UL, 1UL );
+  FD_TEST( tower_valid( tower->votes ) );
+
+  /* 3 skipped slots: the doubled lockout already covers the gap. */
+
+  fd_tower_vote_remove_all( tower->votes );
+  for( ulong s=101UL; s<=105UL; s++ ) push_vote( tower, s );
+  fd_tower_blocks_insert( tower, 109UL, 105UL );
+  FD_TEST( push_vote( tower, 109UL )==ULONG_MAX );
+  FD_TEST( fd_tower_vote_cnt( tower->votes )==6UL );
+  for( ulong i=0UL; i<5UL; i++ ) check_vote( tower, i, 101UL+i, 6UL-i );
+  check_vote( tower, 5UL, 109UL, 1UL );
+  FD_TEST( tower_valid( tower->votes ) );
+
+  /* 7 skipped slots: the longest gap that keeps votes. */
+
+  fd_tower_vote_remove_all( tower->votes );
+  for( ulong s=201UL; s<=205UL; s++ ) push_vote( tower, s );
+  fd_tower_blocks_insert( tower, 213UL, 205UL );
+  FD_TEST( push_vote( tower, 213UL )==ULONG_MAX );
+  FD_TEST( fd_tower_vote_cnt( tower->votes )==6UL );
+  for( ulong i=0UL; i<5UL; i++ ) check_vote( tower, i, 201UL+i, 7UL-i );
+  check_vote( tower, 5UL, 213UL, 1UL );
+  FD_TEST( tower_valid( tower->votes ) );
+
+  /* 8 skipped slots: votes expire as usual. */
+
+  fd_tower_vote_remove_all( tower->votes );
+  for( ulong s=301UL; s<=305UL; s++ ) push_vote( tower, s );
+  fd_tower_blocks_insert( tower, 314UL, 305UL );
+  FD_TEST( retain_cnt( tower, 314UL )==2UL );
+  FD_TEST( push_vote ( tower, 314UL )==ULONG_MAX );
+  FD_TEST( fd_tower_vote_cnt( tower->votes )==3UL );
+  check_vote( tower, 0UL, 301UL, 5UL );
+  check_vote( tower, 1UL, 302UL, 4UL );
+  check_vote( tower, 2UL, 314UL, 1UL );
+  FD_TEST( tower_valid( tower->votes ) );
+
+  /* A short gap onto another fork: votes expire as usual. */
+
+  fd_tower_vote_remove_all( tower->votes );
+  for( ulong s=401UL; s<=405UL; s++ ) push_vote( tower, s );
+  fd_tower_blocks_insert( tower, 409UL, 403UL );
+  FD_TEST( retain_cnt( tower, 409UL )==3UL );
+  FD_TEST( push_vote ( tower, 409UL )==ULONG_MAX );
+  FD_TEST( fd_tower_vote_cnt( tower->votes )==4UL );
+  check_vote( tower, 0UL, 401UL, 5UL );
+  check_vote( tower, 1UL, 402UL, 4UL );
+  check_vote( tower, 2UL, 403UL, 3UL );
+  check_vote( tower, 3UL, 409UL, 1UL );
+  FD_TEST( tower_valid( tower->votes ) );
+
+  /* A gap above a single vote. */
+
+  fd_tower_vote_remove_all( tower->votes );
+  push_vote( tower, 501UL );
+  fd_tower_blocks_insert( tower, 506UL, 501UL );
+  FD_TEST( push_vote( tower, 506UL )==ULONG_MAX );
+  FD_TEST( fd_tower_vote_cnt( tower->votes )==2UL );
+  check_vote( tower, 0UL, 501UL, 3UL );
+  check_vote( tower, 1UL, 506UL, 1UL );
+
+  /* The threshold check follows the vote that ends up with the
+     threshold lockout: slot 624 after 3 skipped slots, 625 after 4. */
+
+  fd_tower_vote_remove_all( tower->votes );
+  for( ulong s=601UL; s<=631UL; s++ ) push_vote( tower, s );
+  fd_tower_blocks_insert( tower, 635UL, 631UL );
+  fd_tower_blocks_insert( tower, 636UL, 631UL );
+  fd_tower_vtr_t * vtr = fd_tower_vtr_push_tail_nocopy( tower->vtrs );
+  vtr->stake = 100UL;
+  fd_tower_vote_remove_all( vtr->votes );
+  fd_tower_vote_push_tail( vtr->votes, (fd_tower_vote_t){ .slot = 624UL, .conf = 5UL } );
+  FD_TEST(  threshold_check( tower, tower->vtrs, 100UL, 635UL ) );
+  FD_TEST( !threshold_check( tower, tower->vtrs, 100UL, 636UL ) );
+  fd_tower_vote_peek_tail( vtr->votes )->slot = 625UL;
+  FD_TEST(  threshold_check( tower, tower->vtrs, 100UL, 636UL ) );
+  fd_tower_vtr_remove_all( tower->vtrs );
+
+  for( ulong s=0UL; s<1000UL; s++ ) fd_tower_blocks_remove( tower, s );
+
+  /* Random gaps on one fork with a quarter of the votes not landing:
+     every tower we would send passes the vote program, and no vote is
+     lost to a gap of up to 7 slots. */
+
+  fd_rng_t _rng[1]; fd_rng_t * rng = fd_rng_join( fd_rng_new( _rng, 0U, 0UL ) );
+  fd_tower_vote_t chain[ FD_TOWER_VOTE_MAX ]; /* the tower on chain */
+  ulong           chain_cnt  = 0UL;
+  ulong           chain_root = ULONG_MAX;
+  ulong           root       = ULONG_MAX;
+  ulong           prev       = 1000UL;
+  ulong           done       = 1000UL; /* blocks below done are removed */
+  fd_tower_vote_remove_all( tower->votes );
+  fd_tower_blocks_insert( tower, prev, prev-1UL );
+  push_vote( tower, prev );
+  for( ulong i=0UL; i<200000UL; i++ ) {
+    ulong gap  = fd_rng_ulong_roll( rng, 8UL ) ? 0UL : fd_rng_ulong_roll( rng, 14UL );
+    ulong slot = prev+1UL+gap;
+    ulong cnt  = fd_tower_vote_cnt( tower->votes );
+    fd_tower_blocks_insert( tower, slot, prev );
+
+    ulong new_root = push_vote( tower, slot );
+    if( new_root!=ULONG_MAX ) {
+      FD_TEST( root==ULONG_MAX || new_root>root );
+      root = new_root;
+      for( ; done<root; done++ ) fd_tower_blocks_remove( tower, done );
+    }
+    FD_TEST( tower_valid( tower->votes ) );
+    FD_TEST( !fd_tower_verify( tower ) );
+    FD_TEST( tower_accepts( chain, chain_cnt, chain_root, tower->votes, root ) );
+    FD_TEST( fd_tower_vote_peek_tail_const( tower->votes )->slot==slot );
+    if( gap<=7UL ) {
+      FD_TEST( fd_tower_vote_cnt( tower->votes )+(ulong)(new_root!=ULONG_MAX)>=cnt );
+      FD_TEST( fd_tower_vote_peek_index_const( tower->votes, fd_tower_vote_cnt( tower->votes )-2UL )->slot==prev );
+    }
+
+    if( fd_rng_ulong_roll( rng, 4UL ) ) {
+      chain_cnt  = 0UL;
+      chain_root = root;
+      for( fd_tower_vote_iter_t iter = fd_tower_vote_iter_init( tower->votes       );
+                                      !fd_tower_vote_iter_done( tower->votes, iter );
+                                iter = fd_tower_vote_iter_next( tower->votes, iter ) ) {
+        chain[ chain_cnt++ ] = *fd_tower_vote_iter_ele_const( tower->votes, iter );
+      }
+    }
+    prev = slot;
+  }
+  fd_rng_delete( fd_rng_leave( rng ) );
+
+  fd_wksp_free_laddr( fd_tower_delete( fd_tower_leave( tower ) ) );
+}
+
 static void
 test_verify( void ) {
   fd_tower_t * tower = fd_tower_join( fd_tower_new( scratch, 2UL, 2UL, 0UL ) );
@@ -1277,6 +1489,7 @@ main( int argc, char ** argv ) {
   test_compact_indices();
   test_compact_stake_indices();
   test_vote();
+  test_vote_gap( wksp );
   test_verify();
   test_tower_from_vote_acc_data_v1_14_11();
   test_tower_from_vote_acc_data_current();

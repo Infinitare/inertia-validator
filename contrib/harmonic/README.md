@@ -208,3 +208,14 @@ Up to v0.11 this fork moved `fd_plugin.h` from `src/discoh/plugin/` to
 `src/disco/plugin/`, because Firedancer's GUI and gossip tiles still
 included it.  As of v26 nothing outside `src/discoh` includes it, so the
 move is gone and `src/discoh` is deleted whole.
+
+### Tower votes across skipped slots
+
+`push_vote()` in `src/choreo/tower/fd_tower.c` keeps our votes when the
+next vote is on the same fork and at most 7 slots were skipped, where
+upstream and Agave let them expire (`retain_cnt()`, `GAP_CONF`).  The
+vote before the gap gets one extra confirmation so the tower stays valid
+for the vote program, which roots one vote a slot early.  This is what
+earns vote credits for the slots before a skipped leader.  If a merge
+touches `push_vote()` or `threshold_check()`, re-apply it and run
+`test_tower`.
