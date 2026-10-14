@@ -3,6 +3,7 @@
 
 #include "../../third_party/nanopb/pb_decode.h"
 #include "../../ballet/pb/fd_pb_encode.h"
+#include "../../disco/tiles.h"
 #include "../../disco/metrics/fd_metrics.h"
 #include "../../disco/topo/fd_topo.h"
 #include "../../util/io/fd_io.h"
@@ -27,6 +28,9 @@
 #define UPDATE_FIELD_TXN  (1U)
 #define UPDATE_FIELD_GAP  (2U)
 
+#define IN_KIND_REPLAY (0)
+#define IN_KIND_EXECLE (1)
+
 #define BLOOM_BITS  (1UL<<18)
 #define BLOOM_WORDS (BLOOM_BITS>>6)
 #define BLOOM_MASK  (BLOOM_BITS-1UL)
@@ -48,6 +52,18 @@ struct fd_grpc_sub {
 
 typedef struct fd_grpc_sub fd_grpc_sub_t;
 
+struct fd_grpc_in {
+  int         kind;
+  fd_wksp_t * mem;
+  ulong       chunk0;
+  ulong       wmark;
+  ulong       mtu;
+  ulong       next_seq;
+  int         seq_valid;
+};
+
+typedef struct fd_grpc_in fd_grpc_in_t;
+
 struct fd_grpc_tile {
   fd_grpc_server_t * server;
 
@@ -68,20 +84,18 @@ struct fd_grpc_tile {
   ulong txn_oversz;
   ulong gap_cnt;
   ulong gap_total;
-  ulong next_seq;
-  int   seq_valid;
 
   long next_poll_deadline;
   long poll_interval_ticks;
 
-  fd_replay_message_t         buf[ 1 ];
+  union {
+    fd_replay_message_t replay;
+    fd_txn_p_t          txns[ MAX_TXN_PER_MICROBLOCK ];
+    uchar               raw[ FD_EXECLE_POH_MTU ];
+  } buf[ 1 ];
   inertia_v1_SubscribeRequest req[ 1 ];
 
-  struct {
-    fd_wksp_t * mem;
-    ulong       chunk0;
-    ulong       wmark;
-  } in[ 8 ];
+  fd_grpc_in_t in[ FD_TOPO_MAX_TILE_IN_LINKS ];
 };
 
 typedef struct fd_grpc_tile fd_grpc_tile_t;
@@ -227,11 +241,12 @@ emit_gap( fd_grpc_tile_t * ctx ) {
 }
 
 static void
-emit_txn( fd_grpc_tile_t *                 ctx,
-          fd_replay_txn_executed_t const * exec ) {
+emit_txn( fd_grpc_tile_t *   ctx,
+          ulong              slot,
+          fd_txn_p_t const * txnp,
+          int                txn_err ) {
   if( FD_LIKELY( !ctx->txn_mask ) ) return;
 
-  fd_txn_p_t const * txnp    = exec->txn;
   fd_txn_t const *   txn     = (fd_txn_t const *)txnp->_;
   uchar const *      payload = txnp->payload;
 
@@ -248,7 +263,7 @@ emit_txn( fd_grpc_tile_t *                 ctx,
   int is_vote = fd_txn_is_simple_vote_transaction( txn, payload );
   if( is_vote ) mask &= ctx->vote_mask;
 
-  int success = ( exec->txn_err==0 );
+  int success = ( txn_err==0 );
   if( !success ) mask &= ctx->failed_mask;
 
   mask &= ctx->sub_mask;
@@ -270,10 +285,10 @@ emit_txn( fd_grpc_tile_t *                 ctx,
   fd_pb_encoder_init( enc, out, MSG_MAX );
 
   fd_pb_submsg_open( enc, UPDATE_FIELD_TXN );
-  fd_pb_push_uint64( enc, 1U, exec->slot );
+  fd_pb_push_uint64( enc, 1U, slot );
   fd_pb_push_bytes ( enc, 2U, fd_txn_get_signatures( txn, payload ), 64UL );
   fd_pb_push_bool  ( enc, 3U, success );
-  fd_pb_push_int64 ( enc, 4U, (long)exec->txn_err );
+  fd_pb_push_int64 ( enc, 4U, (long)txn_err );
   fd_pb_push_bool  ( enc, 5U, is_vote );
 
   for( ulong i=0UL; i<acct_cnt; i++ ) fd_pb_push_bytes( enc, 6U, accts + 32UL*i, 32UL );
@@ -422,8 +437,6 @@ tile_ctx_init( void *                 scratch,
   ctx->txn_oversz = 0UL;
   ctx->gap_cnt    = 0UL;
   ctx->gap_total  = 0UL;
-  ctx->next_seq   = 0UL;
-  ctx->seq_valid  = 0;
 
   memset( ctx->acct_map, 0, ctx->acct_map_cnt*sizeof( fd_grpc_acct_entry_t ) );
   memset( ctx->bloom,    0, BLOOM_WORDS*sizeof( ulong )                      );
@@ -452,11 +465,17 @@ unprivileged_init( fd_topo_t const *      topo,
     fd_topo_link_t const * link      = &topo->links[ tile->in_link_id[ i ] ];
     fd_topo_wksp_t const * link_wksp = &topo->workspaces[ topo->objs[ link->dcache_obj_id ].wksp_id ];
 
-    ctx->in[ i ].mem    = link_wksp->wksp;
-    ctx->in[ i ].chunk0 = fd_dcache_compact_chunk0( ctx->in[ i ].mem, link->dcache );
-    ctx->in[ i ].wmark  = fd_dcache_compact_wmark ( ctx->in[ i ].mem, link->dcache, link->mtu );
+    if     ( !strcmp( link->name, "replay_out" ) ) ctx->in[ i ].kind = IN_KIND_REPLAY;
+    else if( !strcmp( link->name, "execle_poh" ) ) ctx->in[ i ].kind = IN_KIND_EXECLE;
+    else FD_LOG_ERR(( "unexpected link name %s", link->name ));
 
-    if( FD_UNLIKELY( strcmp( link->name, "replay_out" ) ) ) FD_LOG_ERR(( "unexpected link name %s", link->name ));
+    FD_TEST( link->mtu<=sizeof( ctx->buf ) );
+    ctx->in[ i ].mem       = link_wksp->wksp;
+    ctx->in[ i ].chunk0    = fd_dcache_compact_chunk0( ctx->in[ i ].mem, link->dcache );
+    ctx->in[ i ].wmark     = fd_dcache_compact_wmark ( ctx->in[ i ].mem, link->dcache, link->mtu );
+    ctx->in[ i ].mtu       = link->mtu;
+    ctx->in[ i ].next_seq  = 0UL;
+    ctx->in[ i ].seq_valid = 0;
   }
 }
 
@@ -495,22 +514,21 @@ before_credit( fd_grpc_tile_t *    ctx,
 
 static int
 before_frag( fd_grpc_tile_t * ctx,
-             ulong            in_idx FD_PARAM_UNUSED,
+             ulong            in_idx,
              ulong            seq,
              ulong            sig ) {
-  if( FD_UNLIKELY( !ctx->seq_valid ) ) {
-    ctx->seq_valid = 1;
-  } else if( FD_UNLIKELY( seq!=ctx->next_seq ) ) {
-    ulong missed = (ulong)fd_seq_diff( seq, ctx->next_seq );
+  fd_grpc_in_t * in = &ctx->in[ in_idx ];
+  if( FD_UNLIKELY( !in->seq_valid ) ) {
+    in->seq_valid = 1;
+  } else if( FD_UNLIKELY( seq!=in->next_seq ) ) {
+    ulong missed = (ulong)fd_seq_diff( seq, in->next_seq );
     if( FD_LIKELY( ctx->sub_mask ) ) ctx->gap_cnt += missed;
     ctx->gap_total += missed;
   }
-  ctx->next_seq = fd_seq_inc( seq, 1UL );
+  in->next_seq = fd_seq_inc( seq, 1UL );
 
-  switch( sig ) {
-    case REPLAY_SIG_TXN_EXECUTED: return !ctx->txn_mask;
-    default:                      return 1;
-  }
+  if( FD_LIKELY( !ctx->txn_mask ) ) return 1;
+  return in->kind==IN_KIND_REPLAY && sig!=REPLAY_SIG_TXN_EXECUTED;
 }
 
 static void
@@ -521,27 +539,39 @@ during_frag( fd_grpc_tile_t * ctx,
              ulong            chunk,
              ulong            sz,
              ulong            ctl FD_PARAM_UNUSED ) {
-  if( FD_UNLIKELY( chunk<ctx->in[ in_idx ].chunk0 || chunk>ctx->in[ in_idx ].wmark || sz>sizeof(ctx->buf) ) ) {
-    FD_LOG_ERR(( "chunk %lu sz %lu out of bounds [%lu,%lu]", chunk, sz, ctx->in[ in_idx ].chunk0, ctx->in[ in_idx ].wmark ));
+  fd_grpc_in_t const * in = &ctx->in[ in_idx ];
+  if( FD_UNLIKELY( chunk<in->chunk0 || chunk>in->wmark || sz>in->mtu ||
+                   ( in->kind==IN_KIND_EXECLE && sz<sizeof(fd_microblock_trailer_t) ) ) ) {
+    FD_LOG_ERR(( "chunk %lu sz %lu out of bounds [%lu,%lu]", chunk, sz, in->chunk0, in->wmark ));
   }
-  memcpy( ctx->buf, fd_chunk_to_laddr_const( ctx->in[ in_idx ].mem, chunk ), sz );
+  memcpy( ctx->buf, fd_chunk_to_laddr_const( in->mem, chunk ), sz );
 }
 
 static void
 after_frag( fd_grpc_tile_t *    ctx,
-            ulong               in_idx FD_PARAM_UNUSED,
+            ulong               in_idx,
             ulong               seq    FD_PARAM_UNUSED,
             ulong               sig,
-            ulong               sz     FD_PARAM_UNUSED,
+            ulong               sz,
             ulong               tsorig FD_PARAM_UNUSED,
             ulong               tspub  FD_PARAM_UNUSED,
             fd_stem_context_t * stem   FD_PARAM_UNUSED ) {
-  fd_replay_message_t const * msg = ctx->buf;
-
-  switch( sig ) {
-    case REPLAY_SIG_TXN_EXECUTED: {
-      ctx->last_slot = msg->txn_executed.slot;
-      emit_txn( ctx, &msg->txn_executed );
+  switch( ctx->in[ in_idx ].kind ) {
+    case IN_KIND_REPLAY: {
+      if( FD_UNLIKELY( sig!=REPLAY_SIG_TXN_EXECUTED ) ) break;
+      fd_replay_txn_executed_t const * exec = &ctx->buf->replay.txn_executed;
+      ctx->last_slot = exec->slot;
+      emit_txn( ctx, exec->slot, exec->txn, exec->txn_err );
+      break;
+    }
+    case IN_KIND_EXECLE: {
+      ctx->last_slot = fd_disco_execle_sig_slot( sig );
+      ulong txn_cnt = ( sz-sizeof(fd_microblock_trailer_t) )/sizeof(fd_txn_p_t);
+      for( ulong i=0UL; i<txn_cnt; i++ ) {
+        fd_txn_p_t const * txnp = &ctx->buf->txns[ i ];
+        if( !( txnp->flags & FD_TXN_P_FLAGS_EXECUTE_SUCCESS ) ) continue;
+        emit_txn( ctx, ctx->last_slot, txnp, -(int)( txnp->flags>>24 ) );
+      }
       break;
     }
     default:

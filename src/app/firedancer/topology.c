@@ -965,6 +965,7 @@ fd_topo_initialize( config_t * config ) {
 
   if( FD_UNLIKELY( grpc_enabled ) ) {
     fd_topob_tile_in( topo, "grpc", 0UL, "metric_in", "replay_out", 0UL, FD_TOPOB_UNRELIABLE, FD_TOPOB_POLLED );
+    if( leader_enabled ) FOR(execle_tile_cnt) fd_topob_tile_in( topo, "grpc", 0UL, "metric_in", "execle_poh", i, FD_TOPOB_UNRELIABLE, FD_TOPOB_POLLED );
   }
 
   if( FD_UNLIKELY( solcap_enabled ) ) {

@@ -113,8 +113,7 @@ main( int     argc,
     if( seq%32UL==0UL ) ctx->last_slot++;
 
     fd_replay_txn_executed_t * exec = &execs[ seq%txn_cnt ];
-    exec->slot = ctx->last_slot;
-    emit_txn( ctx, exec );
+    emit_txn( ctx, ctx->last_slot, exec->txn, exec->txn_err );
     seq++;
   }
 
