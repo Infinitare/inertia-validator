@@ -9,7 +9,7 @@
 PB_BIND(bundle_Bundle, bundle_Bundle, AUTO)
 
 
-PB_BIND(bundle_BundleUuid, bundle_BundleUuid, AUTO)
+PB_BIND(bundle_BundleUuid, bundle_BundleUuid, 2)
 
 
 

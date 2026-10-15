@@ -275,6 +275,7 @@ typedef struct {
     ulong txn_received;
     ulong min_blockhash_slot;
     int   is_harmonic;     /* Harmonic: bundle came from the block stream */
+    int   commit_first_only;
     fd_txn_e_t * _txn[ FD_PACK_MAX_TXN_PER_BUNDLE ];
     fd_txn_e_t * const * bundle; /* points to _txn when non-NULL */
   } current_bundle[1];
@@ -1136,6 +1137,7 @@ during_frag( fd_pack_ctx_t * ctx,
         ctx->current_bundle->min_blockhash_slot = ULONG_MAX;
         ctx->current_bundle->txn_received       = 0UL;
         ctx->current_bundle->is_harmonic        = source_tpu==FD_TXN_M_TPU_SOURCE_HARMONIC;
+        ctx->current_bundle->commit_first_only  = !!txnm->block_engine.commit_first_only;
 
         if( FD_UNLIKELY( ctx->current_bundle->txn_cnt==0UL ) ) {
           FD_MCNT_INC( PACK, TXN_PARTIAL_BUNDLE, 1UL );
@@ -1149,6 +1151,9 @@ during_frag( fd_pack_ctx_t * ctx,
       }
       ctx->cur_spot                           = ctx->current_bundle->bundle[ ctx->current_bundle->txn_received ];
       ctx->current_bundle->min_blockhash_slot = fd_ulong_min( ctx->current_bundle->min_blockhash_slot, sig );
+      ctx->cur_spot->txnp->flags              = fd_uint_if( ctx->current_bundle->commit_first_only,
+                                                            ctx->cur_spot->txnp->flags |  FD_TXN_P_FLAGS_COMMIT_FIRST_ONLY,
+                                                            ctx->cur_spot->txnp->flags & ~FD_TXN_P_FLAGS_COMMIT_FIRST_ONLY );
     } else {
       ctx->is_bundle = 0;
 #if FD_PACK_USE_EXTRA_STORAGE

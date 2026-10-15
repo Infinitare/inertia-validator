@@ -541,6 +541,7 @@ handle_bundle( fd_execle_tile_t *  ctx,
 
   int   execution_success = 1;
   ulong failed_idx        = ULONG_MAX;
+  int   commit_first_only = (txn_cnt>1UL) & !!(txns[ 0 ].flags & FD_TXN_P_FLAGS_COMMIT_FIRST_ONLY);
 
   /* Acquire all accdb resources in order to execute the bundle. */
   int setup_bundle = 1;
@@ -582,13 +583,34 @@ handle_bundle( fd_execle_tile_t *  ctx,
     }
   }
 
-  /* If all of the transactions in the bundle executed successfully, we
-     can commit the transactions in order.  At this point, we can also
-     accumulate unused CUs to the rebate.  Otherwise, if any transaction
-     fails, we need to exclude all the bundle transactions and rebate
-     all of the CUs. */
+  if( FD_UNLIKELY( commit_first_only & execution_success ) ) {
+    fd_runtime_fini_bundle( ctx->runtime );
+    setup_bundle = 0;
+
+    fd_txn_out_t * txn_out = &ctx->txn_out[ 0 ];
+    err = fd_runtime_prepare_bundle_accounts( ctx->runtime, bank, ctx->txn_in, ctx->txn_out, 1UL );
+    if( FD_LIKELY( err==FD_RUNTIME_EXECUTE_SUCCESS ) ) {
+      setup_bundle = 1;
+      fd_runtime_prepare_and_execute_txn( ctx->runtime, bank, &ctx->txn_in[ 0 ], txn_out );
+    } else {
+      txn_out->err.is_committable = 0;
+      txn_out->err.txn_err        = err;
+    }
+
+    txns[ 0 ].flags = (txns[ 0 ].flags & 0x00FFFFFFU) | ((uint)(-txn_out->err.txn_err)<<24);
+    if( FD_UNLIKELY( !txn_out->err.is_committable || txn_out->err.txn_err!=FD_RUNTIME_EXECUTE_SUCCESS ) ) {
+      execution_success = 0;
+      failed_idx        = 0UL;
+    }
+  }
+
+  ulong landed_cnt = fd_ulong_if( execution_success, fd_ulong_if( commit_first_only, 1UL, txn_cnt ), 0UL );
+
+  /* Commit the first landed_cnt transactions in order and accumulate
+     their unused CUs to the rebate.  Everything past landed_cnt is
+     excluded from the block and fully rebated. */
   if( FD_LIKELY( execution_success ) ) {
-    for( ulong i=0UL; i<txn_cnt; i++ ) {
+    for( ulong i=0UL; i<landed_cnt; i++ ) {
 
       fd_txn_in_t *  txn_in    = &ctx->txn_in[ i ];
       fd_txn_out_t * txn_out   = &ctx->txn_out[ i ];
@@ -635,12 +657,12 @@ handle_bundle( fd_execle_tile_t *  ctx,
       ctx->metrics.txn_landed[ FD_METRICS_ENUM_TRANSACTION_LANDED_V_LANDED_SUCCESS_IDX ]++;
       ctx->metrics.txn_result[ FD_METRICS_ENUM_TRANSACTION_RESULT_V_SUCCESS_IDX        ]++;
     }
-  } else {
-    FD_TEST( failed_idx != ULONG_MAX );
-    /* A failed bundle is dropped in its entirety: every transaction is
-       marked non-committable and none of them land in the block. We
+  }
+  if( FD_UNLIKELY( landed_cnt<txn_cnt ) ) {
+    FD_TEST( execution_success || failed_idx != ULONG_MAX );
+    /* Non-landing transactions are marked non-committable.  We
        intentionally do NOT emit runtime_txn events here */
-    for( ulong i=0UL; i<txn_cnt; i++ ) {
+    for( ulong i=landed_cnt; i<txn_cnt; i++ ) {
 
       ctx->txn_out[ i ].err.is_committable = 0;
 
@@ -666,7 +688,14 @@ handle_bundle( fd_execle_tile_t *  ctx,
 
   if( FD_LIKELY( setup_bundle ) ) fd_runtime_fini_bundle( ctx->runtime );
 
-  if( FD_LIKELY( ctx->enable_rebates ) ) fd_pack_rebate_sum_add_txn( ctx->rebater, txns, writable_alt, txn_cnt );
+  if( FD_LIKELY( ctx->enable_rebates ) ) {
+    if( FD_UNLIKELY( landed_cnt && landed_cnt<txn_cnt ) ) {
+      fd_pack_rebate_sum_add_txn( ctx->rebater, txns,            writable_alt,            landed_cnt         );
+      fd_pack_rebate_sum_add_txn( ctx->rebater, txns+landed_cnt, writable_alt+landed_cnt, txn_cnt-landed_cnt );
+    } else {
+      fd_pack_rebate_sum_add_txn( ctx->rebater, txns, writable_alt, txn_cnt );
+    }
+  }
 
   for( ulong i=0UL; i<txn_cnt; i++ ) {
     fd_txn_out_t const * txn_out = &ctx->txn_out[ i ];

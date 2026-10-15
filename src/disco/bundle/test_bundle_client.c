@@ -1512,6 +1512,7 @@ typedef struct {
   ulong                      packet_cnt;
   uchar                      uuid[ 16 ];
   ulong                      uuid_sz;
+  int                        commit_first_only;
 } test_bundle_desc_t;
 
 typedef struct {
@@ -1560,6 +1561,7 @@ encode_test_bundle_list( pb_ostream_t *     stream,
     FD_TEST( desc->uuid_sz<=sizeof(bundle_uuid.uuid.bytes) );
     bundle_uuid.uuid.size = (pb_size_t)desc->uuid_sz;
     fd_memcpy( bundle_uuid.uuid.bytes, desc->uuid, desc->uuid_sz );
+    bundle_uuid.commit_first_only = !!desc->commit_first_only;
 
     if( FD_UNLIKELY( !pb_encode_tag_for_field( stream, field ) ) ) return false;
     if( FD_UNLIKELY( !pb_encode_submessage( stream, &bundle_BundleUuid_msg, &bundle_uuid ) ) ) return false;
@@ -1696,9 +1698,10 @@ publish_after_credit( fd_bundle_tile_t * state ) {
       .source_ipv4    = txn->source_ipv4,
       .source_tpu     = txn->source_tpu,
       .block_engine   = {
-        .bundle_id      = txn->bundle_seq,
-        .bundle_txn_cnt = (ushort)txn->bundle_txn_cnt,
-        .commission     = txn->commission,
+        .bundle_id         = txn->bundle_seq,
+        .bundle_txn_cnt    = (ushort)txn->bundle_txn_cnt,
+        .commission        = txn->commission,
+        .commit_first_only = txn->commit_first_only,
       },
     };
     fd_memcpy( txnm->block_engine.commission_pubkey, txn->commission_pubkey, 32UL );
@@ -1947,6 +1950,54 @@ FD_UNIT_TEST( bundle_publish_all_or_nothing ) {
   FD_TEST( publish_after_credit( state )==1UL );
   FD_TEST( pending_txn_empty( state->pending_txns ) );
   expect_published_txn( env, 5UL, 0UL, pkt, sizeof(pkt), 0UL, 1UL, 0U, zero_pubkey );
+
+  test_bundle_env_destroy( env );
+}
+
+FD_UNIT_TEST( bundle_commit_first_only ) {
+  test_bundle_env_t env[1];
+  test_bundle_env_create( env, wksp );
+  fd_bundle_tile_t * state = env->state;
+  state->builder_info_avail = 1;
+
+  uchar const a0[]  = { 0xA0 };
+  uchar const a1[]  = { 0xA1 };
+  uchar const b0[]  = { 0xB0 };
+  uchar const b1[]  = { 0xB1 };
+  uchar const pkt[] = { 0x99 };
+  test_packet_desc_t bundle_a[] = {
+    { .payload=a0, .payload_sz=sizeof(a0) },
+    { .payload=a1, .payload_sz=sizeof(a1) },
+  };
+  test_packet_desc_t bundle_b[] = {
+    { .payload=b0, .payload_sz=sizeof(b0) },
+    { .payload=b1, .payload_sz=sizeof(b1) },
+  };
+  test_bundle_desc_t bundles[] = {
+    { .packets=bundle_a, .packet_cnt=2UL, .uuid={1,2,3}, .uuid_sz=3UL, .commit_first_only=1 },
+    { .packets=bundle_b, .packet_cnt=2UL, .uuid={4,5,6}, .uuid_sz=3UL, .commit_first_only=0 },
+  };
+  test_packet_desc_t packets[] = {
+    { .payload=pkt, .payload_sz=sizeof(pkt) },
+  };
+  uchar bundle_buf[ 512 ];
+  uchar packet_buf[ 128 ];
+  ulong bundle_sz = encode_subscribe_bundles_response( bundle_buf, sizeof(bundle_buf), bundles, 2UL );
+  ulong packet_sz = encode_subscribe_packets_response( packet_buf, sizeof(packet_buf), packets, 1UL );
+
+  fd_bundle_client_grpc_rx_msg( state, bundle_buf, bundle_sz, FD_BUNDLE_CLIENT_REQ_Bundle_SubscribeBundles );
+  fd_bundle_client_grpc_rx_msg( state, packet_buf, packet_sz, FD_BUNDLE_CLIENT_REQ_Bundle_SubscribePackets );
+  FD_TEST( pending_txn_cnt( state->pending_txns )==5UL );
+
+  FD_TEST( publish_after_credit( state )==2UL );
+  FD_TEST( publish_after_credit( state )==2UL );
+  FD_TEST( publish_after_credit( state )==1UL );
+  FD_TEST( published_txn_cnt( env )==5UL );
+
+  uchar const expected[ 5 ] = { 1, 1, 0, 0, 0 };
+  for( ulong i=0UL; i<5UL; i++ ) {
+    FD_TEST( published_txn( env, i, NULL )->block_engine.commit_first_only==expected[ i ] );
+  }
 
   test_bundle_env_destroy( env );
 }

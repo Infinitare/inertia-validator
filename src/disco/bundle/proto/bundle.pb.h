@@ -23,6 +23,7 @@ typedef struct _bundle_BundleUuid {
     bool has_bundle;
     bundle_Bundle bundle;
     bundle_BundleUuid_uuid_t uuid;
+    bool commit_first_only;
 } bundle_BundleUuid;
 
 
@@ -32,15 +33,16 @@ extern "C" {
 
 /* Initializer values for message structs */
 #define bundle_Bundle_init_default               {false, shared_Header_init_default, {{NULL}, NULL}}
-#define bundle_BundleUuid_init_default           {false, bundle_Bundle_init_default, {0, {0}}}
+#define bundle_BundleUuid_init_default           {false, bundle_Bundle_init_default, {0, {0}}, 0}
 #define bundle_Bundle_init_zero                  {false, shared_Header_init_zero, {{NULL}, NULL}}
-#define bundle_BundleUuid_init_zero              {false, bundle_Bundle_init_zero, {0, {0}}}
+#define bundle_BundleUuid_init_zero              {false, bundle_Bundle_init_zero, {0, {0}}, 0}
 
 /* Field tags (for use in manual encoding/decoding) */
 #define bundle_Bundle_header_tag                 2
 #define bundle_Bundle_packets_tag                3
 #define bundle_BundleUuid_bundle_tag             1
 #define bundle_BundleUuid_uuid_tag               2
+#define bundle_BundleUuid_commit_first_only_tag  1000
 
 /* Struct field encoding specification for nanopb */
 #define bundle_Bundle_FIELDLIST(X, a) \
@@ -53,7 +55,8 @@ X(a, CALLBACK, REPEATED, MESSAGE,  packets,           3)
 
 #define bundle_BundleUuid_FIELDLIST(X, a) \
 X(a, STATIC,   OPTIONAL, MESSAGE,  bundle,            1) \
-X(a, STATIC,   SINGULAR, BYTES,    uuid,              2)
+X(a, STATIC,   SINGULAR, BYTES,    uuid,              2) \
+X(a, STATIC,   SINGULAR, BOOL,     commit_first_only, 1000)
 #define bundle_BundleUuid_CALLBACK NULL
 #define bundle_BundleUuid_DEFAULT NULL
 #define bundle_BundleUuid_bundle_MSGTYPE bundle_Bundle

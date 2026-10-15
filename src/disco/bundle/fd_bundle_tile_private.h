@@ -58,6 +58,7 @@ struct fd_bundle_pending_txn {
   ulong  bundle_txn_cnt;
   uchar  commission;
   uchar  commission_pubkey[ 32 ];
+  uchar  commit_first_only;
 };
 
 typedef struct fd_bundle_pending_txn fd_bundle_pending_txn_t;
@@ -253,6 +254,7 @@ struct fd_bundle_tile {
   /* Bundle state */
   ulong bundle_seq;
   ulong bundle_txn_cnt;
+  uchar bundle_commit_first_only;
 
   /* Error backoff */
   fd_rng_t rng[1];

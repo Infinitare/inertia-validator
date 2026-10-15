@@ -1553,7 +1553,7 @@ fd_pack_insert_txn_fini( fd_pack_t  * pack,
     replaces = 1;
   }
 
-  ord->txn->flags &= ~(FD_TXN_P_FLAGS_BUNDLE | FD_TXN_P_FLAGS_INITIALIZER_BUNDLE);
+  ord->txn->flags &= ~(FD_TXN_P_FLAGS_BUNDLE | FD_TXN_P_FLAGS_INITIALIZER_BUNDLE | FD_TXN_P_FLAGS_COMMIT_FIRST_ONLY);
   ord->skip = FD_PACK_SKIP_CNT;
 
   /* At this point, we know we have space to insert the transaction and
@@ -1698,7 +1698,7 @@ insert_bundle_fini_impl( fd_pack_t          * pack,
     nonce_txn_cnt += !!is_durable_nonce;
 
     bundle[ i ]->txnp->flags |= FD_TXN_P_FLAGS_BUNDLE;
-    bundle[ i ]->txnp->flags &= ~(FD_TXN_P_FLAGS_INITIALIZER_BUNDLE | FD_TXN_P_FLAGS_DURABLE_NONCE);
+    bundle[ i ]->txnp->flags &= ~(FD_TXN_P_FLAGS_INITIALIZER_BUNDLE | FD_TXN_P_FLAGS_DURABLE_NONCE | fd_uint_if( initializer_bundle, FD_TXN_P_FLAGS_COMMIT_FIRST_ONLY, 0U ));
     bundle[ i ]->txnp->flags |= fd_uint_if( initializer_bundle, FD_TXN_P_FLAGS_INITIALIZER_BUNDLE, 0U );
     bundle[ i ]->txnp->flags |= fd_uint_if( is_durable_nonce,   FD_TXN_P_FLAGS_DURABLE_NONCE,      0U );
     ord->skip = FD_PACK_SKIP_CNT;

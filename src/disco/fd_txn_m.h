@@ -75,8 +75,9 @@ struct fd_txn_m {
     ulong bundle_txn_cnt;
     uchar commission;
     uchar commission_pubkey[ 32 ];
+    uchar commit_first_only;
 
-    /* alignof is 8, so 7 bytes of padding here */
+    /* alignof is 8, so 6 bytes of padding here */
 
   } block_engine;
 

@@ -482,9 +482,10 @@ after_credit( fd_bundle_tile_t *  ctx,
         .source_tpu     = txn->source_tpu,
         .first_seen_nanos = txn->first_seen_nanos,
         .block_engine   = {
-          .bundle_id      = txn->bundle_seq,
-          .bundle_txn_cnt = txn->bundle_txn_cnt,
-          .commission     = txn->commission,
+          .bundle_id         = txn->bundle_seq,
+          .bundle_txn_cnt    = txn->bundle_txn_cnt,
+          .commission        = txn->commission,
+          .commit_first_only = txn->commit_first_only,
         },
       };
       fd_memcpy( txnm->block_engine.commission_pubkey, txn->commission_pubkey, 32UL );

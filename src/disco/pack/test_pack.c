@@ -1707,6 +1707,47 @@ test_bundle_nonce( void ) {
   fd_pack_delete( fd_pack_leave( pack ) );
 }
 
+static void
+test_bundle_commit_first_only( void ) {
+  fd_pack_t * pack = init_all( 32UL, 1UL, 32UL, &outcome );
+  fd_txn_e_t * _bundle[ 3 ];
+  ulong _deleted;
+
+  fd_txn_e_t * const * bundle = fd_pack_insert_bundle_init( pack, _bundle, 1UL );
+  make_transaction1( bundle[ 0 ]->txnp, 0UL, 1000U, 100U, 11.0, "K", "", NULL, NULL );
+  bundle[ 0 ]->txnp->flags = FD_TXN_P_FLAGS_COMMIT_FIRST_ONLY;
+  FD_TEST( fd_pack_insert_bundle_fini( pack, bundle, 1UL, 1000UL, 1, NULL, &_deleted )>=0 );
+  FD_TEST( fd_pack_schedule_next_microblock( pack, FD_PACK_TEST_MAX_COST_PER_BLOCK, 0.0f, 0UL, FD_PACK_SCHEDULE_BUNDLE, 0, outcome.results )==1UL );
+  FD_TEST(   outcome.results[ 0 ].txnp->flags & FD_TXN_P_FLAGS_INITIALIZER_BUNDLE  );
+  FD_TEST( !(outcome.results[ 0 ].txnp->flags & FD_TXN_P_FLAGS_COMMIT_FIRST_ONLY) );
+  fd_pack_microblock_complete( pack, 0UL );
+  fd_pack_set_initializer_bundles_ready( pack );
+
+  bundle = fd_pack_insert_bundle_init( pack, _bundle, 3UL );
+  for( ulong i=0UL; i<3UL; i++ ) {
+    make_transaction1( bundle[ i ]->txnp, 1UL+i, 1000U, 100U, 11.0, "A", "B", NULL, NULL );
+    bundle[ i ]->txnp->flags = FD_TXN_P_FLAGS_COMMIT_FIRST_ONLY;
+  }
+  FD_TEST( fd_pack_insert_bundle_fini( pack, bundle, 3UL, 1000UL, 0, NULL, &_deleted )>=0 );
+  FD_TEST( fd_pack_schedule_next_microblock( pack, FD_PACK_TEST_MAX_COST_PER_BLOCK, 0.0f, 0UL, FD_PACK_SCHEDULE_BUNDLE, 0, outcome.results )==3UL );
+  for( ulong i=0UL; i<3UL; i++ ) {
+    FD_TEST( outcome.results[ i ].txnp->flags & FD_TXN_P_FLAGS_BUNDLE            );
+    FD_TEST( outcome.results[ i ].txnp->flags & FD_TXN_P_FLAGS_COMMIT_FIRST_ONLY );
+  }
+  fd_pack_microblock_complete( pack, 0UL );
+
+  fd_txn_e_t * txn = fd_pack_insert_txn_init( pack );
+  make_transaction1( txn->txnp, 4UL, 1000U, 100U, 11.0, "C", "D", NULL, NULL );
+  txn->txnp->flags = FD_TXN_P_FLAGS_COMMIT_FIRST_ONLY;
+  FD_TEST( fd_pack_insert_txn_fini( pack, txn, 1000UL, &_deleted )>=0 );
+  FD_TEST( fd_pack_schedule_next_microblock( pack, FD_PACK_TEST_MAX_COST_PER_BLOCK, 0.0f, 0UL, FD_PACK_SCHEDULE_TXN, 0, outcome.results )==1UL );
+  FD_TEST( !(outcome.results[ 0 ].txnp->flags & FD_TXN_P_FLAGS_COMMIT_FIRST_ONLY) );
+  fd_pack_microblock_complete( pack, 0UL );
+
+  FD_TEST( !fd_pack_verify( pack, pack_verify_scratch ) );
+  fd_pack_delete( fd_pack_leave( pack ) );
+}
+
 
 /* Harmonic block mode.  Block bundles are admitted whole and in order,
    scheduled one bundle per microblock in FIFO order, and the executed
@@ -2189,6 +2230,7 @@ main( int     argc,
   test_duplicate_sig();
   test_nonce();
   test_bundle_nonce();
+  test_bundle_commit_first_only();
   test_harmonic();
   if( extra_benchmark ) {
     performance_test( extra_benchmark );
