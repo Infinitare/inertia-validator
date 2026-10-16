@@ -70,6 +70,7 @@ deps-bundle.tar.zst
 # Custom config
 /*.toml
 /*.sh
+!/update.sh
 
 # Python
 venv
