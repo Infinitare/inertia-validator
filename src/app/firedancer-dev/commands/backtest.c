@@ -464,7 +464,7 @@ backtest_topo( config_t * config ) {
 
   if( FD_LIKELY( telemetry_enabled ) ) wire_event_links( topo );
 
-  // fd_topob_auto_layout( topo, 0 );
+  // fd_topob_auto_layout( topo );
   if( FD_UNLIKELY( !is_auto_affinity ) ) {
     if( FD_UNLIKELY( affinity_tile_cnt<topo->tile_cnt ) )
       FD_LOG_ERR(( "topology has %lu tiles but [layout.affinity] only provides %lu entries", topo->tile_cnt, affinity_tile_cnt ));

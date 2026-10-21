@@ -80,7 +80,6 @@ fd_global_options_help( fd_action_help_t * help ) {
 int
 fd_dev_main( int                        argc,
              char **                    _argv,
-             int                        is_firedancer,
              fd_config_file_t * const * configs,
              void (* topo_init )( config_t * config ) ) {
   fd_version_private_boot( &argc, &_argv );
@@ -151,25 +150,16 @@ fd_dev_main( int                        argc,
 # if !FD_HAS_ASAN && !FD_HAS_MSAN
   fd_log_enable_signal_handler();
 # endif
-  int load_topo = fd_main_init( &argc, &argv, &config, opt_user_config_path, is_firedancer, action->is_local_cluster, log_path, configs, 1 /* dev */ );
+  int load_topo = fd_main_init( &argc, &argv, &config, opt_user_config_path, action->is_local_cluster, log_path, configs, 1 /* dev */ );
   if( FD_LIKELY( load_topo ) ) fd_cstr_ncpy( config.action, action->name, sizeof( config.action ) );
 
   config.development.no_clone = config.development.no_clone || no_clone;
   config.development.sandbox = config.development.sandbox && !no_sandbox && !config.development.no_clone;
 
-  /* Frankendancer has a separate production binary (fdctl); for
-     Firedancer running the dev binary against a live cluster is a
-     supported flow. */
-  int is_allowed_live = is_firedancer || action->is_diagnostic==1;
-  if( FD_UNLIKELY( config.is_live_cluster && !is_allowed_live ) )
-    FD_LOG_ERR(( "The `fddev` command is for development and test environments but your "
-                 "configuration targets a live cluster. Use `fdctl` if this is a "
-                 "production environment" ));
-
   if( FD_LIKELY( load_topo ) ) {
-    if( FD_UNLIKELY( max_live_slots && config.is_firedancer ) ) config.firedancer.runtime.max_live_slots = max_live_slots;
-    if( FD_UNLIKELY( alpenglow      && config.is_firedancer ) ) config.firedancer.consensus.alpenglow = 1;
-    if( FD_UNLIKELY( efficient      && config.is_firedancer ) ) fd_cstr_ncpy( config.firedancer.layout.mode, "efficient", sizeof(config.firedancer.layout.mode) );
+    if( FD_UNLIKELY( max_live_slots ) ) config.firedancer.runtime.max_live_slots = max_live_slots;
+    if( FD_UNLIKELY( alpenglow      ) ) config.firedancer.consensus.alpenglow = 1;
+    if( FD_UNLIKELY( efficient      ) ) fd_cstr_ncpy( config.firedancer.layout.mode, "efficient", sizeof(config.firedancer.layout.mode) );
     if( FD_LIKELY( action->topo ) ) action->topo( &config );
     else                            topo_init( &config );
   }

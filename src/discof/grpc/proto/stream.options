@@ -1,0 +1,6 @@
+inertia.v1.SubscribeRequest.accounts     max_count:256 max_size:32
+
+inertia.v1.CompiledInstruction           skip_message:true
+inertia.v1.TxnUpdate                     skip_message:true
+inertia.v1.Gap                           skip_message:true
+inertia.v1.Update                        skip_message:true
