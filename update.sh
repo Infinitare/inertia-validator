@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pull, rebuild, pre-download PEER's current snapshot pair into SNAPDIR,
+# Move main to origin/main, rebuild, pre-download PEER's current snapshot pair into SNAPDIR,
 # then restart Firedancer and follow the log.  Everything but the restart
 # runs while the validator is up, and any failure aborts before it.
 # Set PULL=0, BUILD=0 or SNAPSHOT=0 to skip a step.
@@ -26,8 +26,14 @@ fetch() {
 }
 
 main() {
-  if [[ ${PULL:-1} == 1 ]]; then git -C "$(dirname "$0")" pull --ff-only; fi
-  if [[ ${BUILD:-1} == 1 ]]; then nice -n 19 make -C "$(dirname "$0")" -j firedancer; fi
+  local repo
+  repo=$(dirname "$0")
+  if [[ ${PULL:-1} == 1 ]]; then
+    git -C "$repo" diff --quiet HEAD || { echo "local changes in $repo, commit or stash them" >&2; exit 1; }
+    git -C "$repo" fetch origin
+    git -C "$repo" checkout -B main origin/main # releases rewrite main, a pull cannot fast-forward
+  fi
+  if [[ ${BUILD:-1} == 1 ]]; then nice -n 19 make -C "$repo" -j firedancer; fi
 
   if [[ ${SNAPSHOT:-1} == 1 ]]; then
     rm -f "$SNAPDIR"/.*.part
