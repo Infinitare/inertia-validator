@@ -78,8 +78,41 @@ fd_hpack_wr_private_name_indexed_0(
 }
 
 static inline int
+fd_hpack_wr_private_literal( fd_h2_rbuf_t * rbuf_tx,
+                             char const *   name,
+                             ulong          name_len,
+                             char const *   value,
+                             ulong          value_len ) {
+  uchar name_pfx[10] = { 0x00 };
+  ulong name_pfx_len = 1UL+fd_hpack_wr_varint( name_pfx+1, 0x00, 0x7f, name_len );
+  uchar val_pfx[9];
+  ulong val_pfx_len = fd_hpack_wr_varint( val_pfx, 0x00, 0x7f, value_len );
+
+  ulong tot_len = name_pfx_len + name_len + val_pfx_len + value_len;
+  if( FD_UNLIKELY( fd_h2_rbuf_free_sz( rbuf_tx )<tot_len ) ) return 0;
+
+  fd_h2_rbuf_push( rbuf_tx, name_pfx, name_pfx_len );
+  fd_h2_rbuf_push( rbuf_tx, name,     name_len     );
+  fd_h2_rbuf_push( rbuf_tx, val_pfx,  val_pfx_len  );
+  fd_h2_rbuf_push( rbuf_tx, value,    value_len    );
+  return 1;
+}
+
+static inline int
 fd_hpack_wr_method_post( fd_h2_rbuf_t * rbuf_tx ) {
   return fd_hpack_wr_private_indexed( rbuf_tx, 0x03 );
+}
+
+static inline int
+fd_hpack_wr_status( fd_h2_rbuf_t * rbuf_tx,
+                    uint           status ) {
+  if( FD_LIKELY( status==200U ) ) return fd_hpack_wr_private_indexed( rbuf_tx, 0x08 );
+  char code[3] = { (char)( '0' + ( (status/100U)%10U ) ),
+                   (char)( '0' + ( (status/ 10U)%10U ) ),
+                   (char)( '0' + (  status      %10U ) ) };
+  if( FD_UNLIKELY( !fd_hpack_wr_private_name_indexed_0( rbuf_tx, 0x08, 3UL ) ) ) return 0;
+  fd_h2_rbuf_push( rbuf_tx, code, 3UL );
+  return 1;
 }
 
 static inline int

@@ -1051,7 +1051,7 @@ telemetry = true
     # `mainnet`, except when using unique scheduling strategies.  For
     # development and benchmarking, it can be useful to increase this
     # number further.
-    execle_tile_count = 2
+    execle_tile_count = 4
 
     # How many execrp tiles to run.  These tiles execute transactions
     # that are being replayed when our validator is not leader, and is
@@ -1604,6 +1604,15 @@ telemetry = true
         # it is being accessed.
         tls_domain_name = ""
 
+        # The URL for a second subscribePackets stream from the remote
+        # TPU.  If empty, no second connection is established.
+        tpu_url = ""
+
+        # The domain name of the TLS certificate to use when verifying
+        # the remote tpu.  If none is provided, the domain from tpu_url above
+        # will be used by default.
+        tpu_tls_domain_name = ""
+
         # The tip distribution program is used to control the
         # distribution of tips that transactions from bundles may pay.
         # This should be set to the public key of the tip distribution
@@ -1646,6 +1655,11 @@ telemetry = true
         # specifies https.  To disable certificate verification, set
         # this option to 'false'.
         tls_cert_verify = true
+
+        # Scheduling strategy to request from the block engine.  "fba"
+        # (frequent batch auction: discrete batches ordered by priority
+        # fees and tips) is the only accepted value.
+        strategy = "fba"
 
     # The pack tile takes incoming transactions that have been verified
     # by the verify tile and then deduplicated, and attempts to order
@@ -1968,6 +1982,35 @@ telemetry = true
         # loading.
         delay_startup = true
 
+    [tiles.grpc]
+        # If the gRPC streaming server is enabled.  It serves the
+        # inertia.v1.Stream service, which lets clients subscribe to
+        # slot updates and to transactions touching a set of accounts.
+        enabled = false
+
+        # The address to listen on.  The server speaks plaintext HTTP/2
+        # (h2c) with no authentication, so it must not be exposed to
+        # untrusted networks.  Restrict access with a firewall.
+        listen_address = "127.0.0.1"
+
+        # The port to listen on.
+        listen_port = 10800
+
+        # The maximum number of concurrent subscriptions.  Must be at
+        # most 64.  Each subscription may filter on up to 256 accounts.
+        max_subscriptions = 64
+
+        # How many updates may be queued for a single subscriber before
+        # it is considered too slow and disconnected.  Must be a power
+        # of two.  Larger values tolerate briefly stalled clients at the
+        # cost of memory.
+        tx_depth = 4096
+
+        # All subscribers share buffer space for outgoing updates.  A
+        # subscriber that falls far enough behind to be overtaken in
+        # this buffer is disconnected.  Must be a power of two.
+        send_buffer_size_mb = 32
+
 # These options can be useful for development, but should not be used
 # when connecting to a live cluster, as they may cause the validator to
 # be unstable or have degraded performance or security.  The program
@@ -2227,7 +2270,7 @@ telemetry = true
         # This affects the size of various gRPC-related buffers,
         # including socket buffer sizes, the TLS buffer, the HTTP/2
         # frame buffer, and a Protobuf encode buffer.
-        buffer_size_kib = 2048
+        buffer_size_kib = 8192
 
         # Log TLS encryption keys for block engine connection.  An empty
         # string (the default) disables key logging.

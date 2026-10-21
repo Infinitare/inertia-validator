@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package inertia.v1;
+
+service Stream {
+  rpc Subscribe(SubscribeRequest) returns (stream Update);
+}
+
+message SubscribeRequest {
+  // 32-byte pubkeys. A transaction matches if any of its account keys
+  // appear here. Empty means no transactions.
+  repeated bytes accounts = 1;
+  bool include_votes = 2;
+  bool include_failed = 3;
+}
+
+message CompiledInstruction {
+  uint32 program_id_index = 1;
+  bytes accounts = 2;
+  bytes data = 3;
+}
+
+message TxnUpdate {
+  uint64 slot = 1;
+  bytes signature = 2;
+  bool success = 3;
+  int32 err = 4;
+  bool is_vote = 5;
+  repeated bytes account_keys = 6;
+  repeated CompiledInstruction instructions = 7;
+}
+
+message Gap {
+  uint64 dropped = 1;
+  uint64 slot = 2;
+}
+
+message Update {
+  oneof update {
+    TxnUpdate txn = 1;
+    Gap gap = 2;
+  }
+}

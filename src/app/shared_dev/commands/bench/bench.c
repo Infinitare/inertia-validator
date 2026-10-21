@@ -61,8 +61,7 @@ add_bench_topo( fd_topo_t  * topo,
                 ushort       send_to_port,
                 uint         send_to_ip_addr,
                 ushort       rpc_port,
-                uint         rpc_ip_addr,
-                int          reserve_agave_cores ) {
+                uint         rpc_ip_addr ) {
 
   fd_topob_wksp( topo, "bench" );
   fd_topob_link( topo, "bencho_out", "bench", 128UL, 64UL, 1UL );
@@ -131,7 +130,7 @@ add_bench_topo( fd_topo_t  * topo,
   }
 
   /* This will blow away previous auto topology layouts and recompute an auto topology. */
-  if( FD_UNLIKELY( is_bench_auto_affinity ) ) fd_topob_auto_layout( topo, reserve_agave_cores );
+  if( FD_UNLIKELY( is_bench_auto_affinity ) ) fd_topob_auto_layout( topo );
   fd_topob_sleep_finish( topo );
   fd_topob_finish( topo, CALLBACKS );
 }
@@ -147,30 +146,16 @@ bench_topo( config_t * config ) {
 
   ushort rpc_port;
   uint rpc_ip_addr;
-  if( FD_UNLIKELY( !config->is_firedancer ) ) {
-    config->frankendancer.rpc.port     = fd_ushort_if( config->frankendancer.rpc.port, config->frankendancer.rpc.port, 8899 );
-    config->frankendancer.rpc.full_api = 1;
-    rpc_port = config->frankendancer.rpc.port;
-    rpc_ip_addr = config->net.ip_addr;
-  } else {
-    if( FD_UNLIKELY( !config->tiles.rpc.enabled ) ) FD_LOG_ERR(( "RPC tile must be enabled to run bench" ));
-    rpc_port = config->tiles.rpc.rpc_listen_port;
-    if( FD_UNLIKELY( !fd_cstr_to_ip4_addr( config->tiles.rpc.rpc_listen_address, &rpc_ip_addr ) ) )
-      FD_LOG_ERR(( "failed to parse rpc listen address `%s`", config->tiles.rpc.rpc_listen_address ));
-  }
+  if( FD_UNLIKELY( !config->tiles.rpc.enabled ) ) FD_LOG_ERR(( "RPC tile must be enabled to run bench" ));
+  rpc_port = config->tiles.rpc.rpc_listen_port;
+  if( FD_UNLIKELY( !fd_cstr_to_ip4_addr( config->tiles.rpc.rpc_listen_address, &rpc_ip_addr ) ) )
+    FD_LOG_ERR(( "failed to parse rpc listen address `%s`", config->tiles.rpc.rpc_listen_address ));
 
   int is_auto_affinity = !strcmp( config->layout.affinity, "auto" );
-  int is_agave_auto_affinity;
-  if( FD_UNLIKELY( config->is_firedancer ) ) {
-    is_agave_auto_affinity = is_auto_affinity;
-  } else {
-    is_agave_auto_affinity = !strcmp( config->frankendancer.layout.agave_affinity, "auto" );
-  }
   int is_bench_auto_affinity = !strcmp( config->development.bench.affinity, "auto" );
 
-  if( FD_UNLIKELY( is_auto_affinity != is_agave_auto_affinity ||
-                   is_auto_affinity != is_bench_auto_affinity ) ) {
-    FD_LOG_ERR(( "The CPU affinity string in the configuration file under [layout.affinity], [layout.agave_affinity], and [development.bench.affinity] must all be set to 'auto' or all be set to a specific CPU affinity string." ));
+  if( FD_UNLIKELY( is_auto_affinity != is_bench_auto_affinity ) ) {
+    FD_LOG_ERR(( "The CPU affinity string in the configuration file under [layout.affinity] and [development.bench.affinity] must both be set to 'auto' or both be set to a specific CPU affinity string." ));
   }
 
   int transaction_mode = bench_transaction_mode( config->development.bench.transaction_mode );
@@ -187,8 +172,7 @@ bench_topo( config_t * config ) {
                   config->tiles.quic.quic_transaction_listen_port,
                   config->net.ip_addr,
                   rpc_port,
-                  rpc_ip_addr,
-                  !config->is_firedancer );
+                  rpc_ip_addr );
 }
 
 static pid_t bench_pid;
@@ -253,9 +237,7 @@ bench_cmd_fn( args_t *   args,
   initialize_accdb_fd( config );
   initialize_stake_delegations_fd( config );
   initialize_store_fds( config );
-  if( FD_LIKELY( config->is_firedancer ) ) {
-    initialize_snapshot_fds( config );
-  }
+  initialize_snapshot_fds( config );
 
   fd_topo_join_workspaces( &config->topo, FD_SHMEM_JOIN_MODE_READ_WRITE, FD_TOPO_CORE_DUMP_LEVEL_DISABLED );
   if( 0==strcmp( config->net.provider, "mlx5" ) ) {

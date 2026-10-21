@@ -497,6 +497,13 @@ deliberate exception with lint-allow="<rule id>")
     <int value="3" name="Sleeping" label="Sleeping" />
 </enum>
 
+<enum name="BlockTxnDropReason">
+    <int value="0" name="WrongSlot" label="Block is for a slot other than our current leader slot" />
+    <int value="1" name="ConnReset" label="Block engine connection was reset during our leader slot, so the rest of its block is dropped" />
+    <int value="2" name="InvalidBundle" label="Bundle has more transactions than a bundle allows, or an empty transaction" />
+    <int value="3" name="Malformed" label="Block message failed to decode" />
+</enum>
+
 <tile name="bundle">
     <counter name="TxnRx" summary="Transactions received, including transactions within bundles" />
     <counter name="StandaloneTxnRx" summary="Transactions received outside of a bundle" />
@@ -510,6 +517,14 @@ deliberate exception with lint-allow="<rule id>")
     <gauge name="LastRttNanos" summary="Latest block engine HTTP/2 PING round trip, 0 if none since connect" />
     <gauge name="RttSmoothedNanos" summary="Smoothed block engine HTTP/2 PING round trip (RFC 9002), 0 if none since connect" />
     <gauge name="RttDeviationNanos" summary="Mean deviation of block engine HTTP/2 PING round trips (RFC 9002 rttvar), 0 if none since connect" />
+    <gauge name="TpuConnState" states="BundleConnState" summary="TPU endpoint connection state; Sleeping means the block engine connection is closed on purpose and the TPU connection is not serviced" />
+    <counter name="TpuTxnRx" summary="Transactions received from the TPU endpoint" />
+    <counter name="BlockRx" summary="Block messages received from the block engine" />
+    <counter name="BlockTxnRx" summary="Transactions from blocks published to verify" />
+    <counter name="BlockTxnDropped" enum="BlockTxnDropReason" summary="Transactions from blocks dropped before publishing, by reason" />
+    <counter name="LeaderWindowRequestTx" summary="Leader window info requests sent to the block engine" />
+    <counter name="LeaderWindowRequestFailed" summary="Leader window info requests that the block engine rejected, that timed out, or whose connection failed" />
+    <counter name="LeaderWindowRequestExpiredDropped" summary="Leader window info requests never sent because the slot ended or the next leader slot superseded them" />
     <histogram name="MessageRxDelayNanos" min="100000" max="1000000000">
         <summary>Local wall clock minus server timestamp per block engine message; includes clock skew, negative clamped to 0</summary>
     </histogram>
@@ -588,6 +603,7 @@ deliberate exception with lint-allow="<rule id>")
 
 <enum name="PackTxnInsertResult">
     <!-- Keep in sync with FD_PACK_INSERT_* in fd_pack.h -->
+    <int value="-17" name="BlockRejected" label="Harmonic block bundle refused (wrong mode, slot, cutoff, or failed validation)" />
     <int value="-16" name="InstrTooManyAccounts" label="Transaction has an instruction that references too many accounts" />
     <int value="-15" name="NonceConflict" label="Bundle with two conflicting durable nonce transactions" />
     <int value="-14" name="AccountBlocklisted" label="Transaction uses an account on the account blocklist" />
@@ -891,16 +907,16 @@ deliberate exception with lint-allow="<rule id>")
 </tile>
 
 <tile name="pohh" telemetry="false">
-    <histogram name="BeginLeaderDelayNanos" min="10" max="10000000" source="ticks">
+    <histogram name="BeginLeaderDelayNanos" min="10" max="10000000" source="ticks" lint-allow="writer">
         <summary>Delay between when we become leader in a slot and when we receive the bank</summary>
     </histogram>
-    <histogram name="FirstMicroblockDelayNanos" min="10" max="10000000" source="ticks">
+    <histogram name="FirstMicroblockDelayNanos" min="10" max="10000000" source="ticks" lint-allow="writer">
         <summary>Delay between when we become leader in a slot and when we receive the first microblock</summary>
     </histogram>
-    <histogram name="SlotDoneDelayNanos" min="1000000" max="600000000" source="ticks">
+    <histogram name="SlotDoneDelayNanos" min="1000000" max="600000000" source="ticks" lint-allow="writer">
         <summary>Delay between when we become leader in a slot and when we finish the slot</summary>
     </histogram>
-    <histogram name="BundleInitializeDelayNanos" min="10" max="10000000" source="ticks">
+    <histogram name="BundleInitializeDelayNanos" min="10" max="10000000" source="ticks" lint-allow="writer">
         <summary>Delay in starting the slot caused by loading the information needed to generate the bundle crank transactions</summary>
     </histogram>
 </tile>
@@ -961,7 +977,7 @@ deliberate exception with lint-allow="<rule id>")
 </tile>
 
 <tile name="store" telemetry="false">
-    <counter name="LeaderTxnInserted" summary="Estimated transactions in our leader shreds inserted into the store" />
+    <counter name="LeaderTxnInserted" summary="Estimated transactions in our leader shreds inserted into the store" lint-allow="writer" />
 </tile>
 
 <tile name="accdb">
@@ -1662,6 +1678,23 @@ deliberate exception with lint-allow="<rule id>")
     <counter name="AccdbCopiedBytes" summary="Account data bytes copied in memory between cache lines, staging buffers and callers; disk reads excluded" />
 </tile>
 
+<tile name="grpc" telemetry="false">
+    <gauge name="SubscriptionCount" summary="Active subscriptions to the gRPC streaming server" />
+    <counter name="ConnAccepted" summary="Connections accepted by the gRPC streaming server" />
+    <counter name="ConnRejected" summary="Connections rejected because the connection limit was reached" />
+    <counter name="ConnErr" summary="Times accepting a connection failed" lint-allow="action kind" />
+    <counter name="StreamOpened" summary="Streams opened by gRPC clients" />
+    <counter name="StreamRejected" summary="Streams rejected because of stream limits or an unimplemented path" />
+    <counter name="StreamEvicted" summary="Subscribers disconnected for falling too far behind" />
+    <counter name="MsgStaged" summary="Updates encoded" />
+    <counter name="MsgQueued" summary="Updates queued to a subscriber, summed over subscribers" />
+    <counter name="MsgDropped" summary="Updates that could not be encoded because the send buffer was too small" />
+    <counter name="MsgAbandoned" summary="Updates that were staged but never broadcast" />
+    <counter name="TxnOversz" summary="Matching transactions not sent because their encoding exceeded the message size limit" lint-allow="action kind" />
+    <counter name="BytesTx" summary="Data written to all subscribers" />
+    <counter name="FragsDropped" summary="Replay frags missed because the tile fell behind, reported to subscribers as gaps" lint-allow="plural" />
+</tile>
+
 <enum name="SoftirqType">
     <int value="0" name="Net" label="NET_TX, NET_RX" />
     <int value="1" name="Disk" label="BLOCK" />
@@ -2081,8 +2114,8 @@ deliberate exception with lint-allow="<rule id>")
     <counter name="WebsocketFrameTx" summary="WebSocket frames sent to all connections to the GUI service" />
     <counter name="WebsocketFrameRx" summary="WebSocket frames received from all connections to the GUI service" />
 
-    <counter name="ConnTxBytes" summary="Bytes written to all connections to the GUI service" />
-    <counter name="ConnRxBytes" summary="Bytes read from all connections to the GUI service" />
+    <counter name="ConnTxBytes" summary="Bytes written to all connections to the GUI service" lint-allow="writer" />
+    <counter name="ConnRxBytes" summary="Bytes read from all connections to the GUI service" lint-allow="writer" />
 </tile>
 
 <enum name="GuiDbType">

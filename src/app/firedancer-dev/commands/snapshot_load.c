@@ -75,7 +75,7 @@ static void
 snapshot_load_layout( config_t *  config,
                       fd_topo_t * topo ) {
   if( FD_LIKELY( !strcmp( config->layout.affinity, "auto" ) ) ) {
-    fd_topob_auto_layout( topo, 0 );
+    fd_topob_auto_layout( topo );
     return;
   }
 

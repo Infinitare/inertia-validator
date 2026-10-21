@@ -377,6 +377,17 @@
 | <span class="metrics-name">bundle_&#8203;last_&#8203;rtt_&#8203;nanos</span> | gauge | Latest block engine HTTP/2 PING round trip, 0 if none since connect |
 | <span class="metrics-name">bundle_&#8203;rtt_&#8203;smoothed_&#8203;nanos</span> | gauge | Smoothed block engine HTTP/2 PING round trip (RFC 9002), 0 if none since connect |
 | <span class="metrics-name">bundle_&#8203;rtt_&#8203;deviation_&#8203;nanos</span> | gauge | Mean deviation of block engine HTTP/2 PING round trips (RFC 9002 rttvar), 0 if none since connect |
+| <span class="metrics-name">bundle_&#8203;tpu_&#8203;conn_&#8203;state</span> | gauge | TPU endpoint connection state; Sleeping means the block engine connection is closed on purpose and the TPU connection is not serviced: 0=disconnected, 1=connecting, 2=connected, 3=sleeping |
+| <span class="metrics-name">bundle_&#8203;tpu_&#8203;txn_&#8203;rx</span> | counter | Transactions received from the TPU endpoint |
+| <span class="metrics-name">bundle_&#8203;block_&#8203;rx</span> | counter | Block messages received from the block engine |
+| <span class="metrics-name">bundle_&#8203;block_&#8203;txn_&#8203;rx</span> | counter | Transactions from blocks published to verify |
+| <span class="metrics-name">bundle_&#8203;block_&#8203;txn_&#8203;dropped</span><br/>{block_&#8203;txn_&#8203;drop_&#8203;reason="<span class="metrics-enum">wrong_&#8203;slot</span>"} | counter | Transactions from blocks dropped before publishing, by reason (Block is for a slot other than our current leader slot) |
+| <span class="metrics-name">bundle_&#8203;block_&#8203;txn_&#8203;dropped</span><br/>{block_&#8203;txn_&#8203;drop_&#8203;reason="<span class="metrics-enum">conn_&#8203;reset</span>"} | counter | Transactions from blocks dropped before publishing, by reason (Block engine connection was reset during our leader slot, so the rest of its block is dropped) |
+| <span class="metrics-name">bundle_&#8203;block_&#8203;txn_&#8203;dropped</span><br/>{block_&#8203;txn_&#8203;drop_&#8203;reason="<span class="metrics-enum">invalid_&#8203;bundle</span>"} | counter | Transactions from blocks dropped before publishing, by reason (Bundle has more transactions than a bundle allows, or an empty transaction) |
+| <span class="metrics-name">bundle_&#8203;block_&#8203;txn_&#8203;dropped</span><br/>{block_&#8203;txn_&#8203;drop_&#8203;reason="<span class="metrics-enum">malformed</span>"} | counter | Transactions from blocks dropped before publishing, by reason (Block message failed to decode) |
+| <span class="metrics-name">bundle_&#8203;leader_&#8203;window_&#8203;request_&#8203;tx</span> | counter | Leader window info requests sent to the block engine |
+| <span class="metrics-name">bundle_&#8203;leader_&#8203;window_&#8203;request_&#8203;failed</span> | counter | Leader window info requests that the block engine rejected, that timed out, or whose connection failed |
+| <span class="metrics-name">bundle_&#8203;leader_&#8203;window_&#8203;request_&#8203;expired_&#8203;dropped</span> | counter | Leader window info requests never sent because the slot ended or the next leader slot superseded them |
 | <span class="metrics-name">bundle_&#8203;message_&#8203;rx_&#8203;delay_&#8203;nanos</span> | histogram | Local wall clock minus server timestamp per block engine message; includes clock skew, negative clamped to 0 |
 | <span class="metrics-name">bundle_&#8203;txn_&#8203;pending</span> | gauge | Transactions buffered and waiting to be published |
 | <span class="metrics-name">bundle_&#8203;txn_&#8203;buffer_&#8203;full_&#8203;dropped</span> | counter | Transactions dropped because the pending transaction buffer was full |
@@ -467,6 +478,7 @@
 | <span class="metrics-name">pack_&#8203;txn_&#8203;per_&#8203;microblock</span> | histogram | Transactions in a scheduled microblock, including both votes and non-votes |
 | <span class="metrics-name">pack_&#8203;vote_&#8203;per_&#8203;microblock</span> | histogram | Simple vote transactions in a scheduled microblock |
 | <span class="metrics-name">pack_&#8203;txn_&#8203;rx</span> | counter | Transactions received from resolv, including bundle members |
+| <span class="metrics-name">pack_&#8203;txn_&#8203;insert_&#8203;attempted</span><br/>{pack_&#8203;txn_&#8203;insert_&#8203;result="<span class="metrics-enum">block_&#8203;rejected</span>"} | counter | Insert attempts, by result; bundle members are counted individually with the bundle's result (Harmonic block bundle refused (wrong mode, slot, cutoff, or failed validation)) |
 | <span class="metrics-name">pack_&#8203;txn_&#8203;insert_&#8203;attempted</span><br/>{pack_&#8203;txn_&#8203;insert_&#8203;result="<span class="metrics-enum">instr_&#8203;too_&#8203;many_&#8203;accounts</span>"} | counter | Insert attempts, by result; bundle members are counted individually with the bundle's result (Transaction has an instruction that references too many accounts) |
 | <span class="metrics-name">pack_&#8203;txn_&#8203;insert_&#8203;attempted</span><br/>{pack_&#8203;txn_&#8203;insert_&#8203;result="<span class="metrics-enum">nonce_&#8203;conflict</span>"} | counter | Insert attempts, by result; bundle members are counted individually with the bundle's result (Bundle with two conflicting durable nonce transactions) |
 | <span class="metrics-name">pack_&#8203;txn_&#8203;insert_&#8203;attempted</span><br/>{pack_&#8203;txn_&#8203;insert_&#8203;result="<span class="metrics-enum">account_&#8203;blocklisted</span>"} | counter | Insert attempts, by result; bundle members are counted individually with the bundle's result (Transaction uses an account on the account blocklist) |
@@ -2055,6 +2067,29 @@
 | <span class="metrics-name">mwaitx_&#8203;wake_&#8203;issued</span><br/>{mwaitx_&#8203;wake_&#8203;cause="<span class="metrics-enum">doorbell</span>"} | counter | futex wakes issued to parked tiles, by cause (A producer rang the doorbell for a parked consumer) |
 | <span class="metrics-name">mwaitx_&#8203;wake_&#8203;issued</span><br/>{mwaitx_&#8203;wake_&#8203;cause="<span class="metrics-enum">deadline</span>"} | counter | futex wakes issued to parked tiles, by cause (A parked tile's deadline lapsed) |
 | <span class="metrics-name">mwaitx_&#8203;wake_&#8203;issued</span><br/>{mwaitx_&#8203;wake_&#8203;cause="<span class="metrics-enum">sweep</span>"} | counter | futex wakes issued to parked tiles, by cause (The verifying sweep found a pending frag whose doorbell raced or was lost) |
+
+</div>
+
+## Grpc Tile
+
+<div class="metrics">
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| <span class="metrics-name">grpc_&#8203;subscription_&#8203;count</span> | gauge | Active subscriptions to the gRPC streaming server |
+| <span class="metrics-name">grpc_&#8203;conn_&#8203;accepted</span> | counter | Connections accepted by the gRPC streaming server |
+| <span class="metrics-name">grpc_&#8203;conn_&#8203;rejected</span> | counter | Connections rejected because the connection limit was reached |
+| <span class="metrics-name">grpc_&#8203;conn_&#8203;err</span> | counter | Times accepting a connection failed |
+| <span class="metrics-name">grpc_&#8203;stream_&#8203;opened</span> | counter | Streams opened by gRPC clients |
+| <span class="metrics-name">grpc_&#8203;stream_&#8203;rejected</span> | counter | Streams rejected because of stream limits or an unimplemented path |
+| <span class="metrics-name">grpc_&#8203;stream_&#8203;evicted</span> | counter | Subscribers disconnected for falling too far behind |
+| <span class="metrics-name">grpc_&#8203;msg_&#8203;staged</span> | counter | Updates encoded |
+| <span class="metrics-name">grpc_&#8203;msg_&#8203;queued</span> | counter | Updates queued to a subscriber, summed over subscribers |
+| <span class="metrics-name">grpc_&#8203;msg_&#8203;dropped</span> | counter | Updates that could not be encoded because the send buffer was too small |
+| <span class="metrics-name">grpc_&#8203;msg_&#8203;abandoned</span> | counter | Updates that were staged but never broadcast |
+| <span class="metrics-name">grpc_&#8203;txn_&#8203;oversz</span> | counter | Matching transactions not sent because their encoding exceeded the message size limit |
+| <span class="metrics-name">grpc_&#8203;bytes_&#8203;tx</span> | counter | Data written to all subscribers |
+| <span class="metrics-name">grpc_&#8203;frags_&#8203;dropped</span> | counter | Replay frags missed because the tile fell behind, reported to subscribers as gaps |
 
 </div>
 
