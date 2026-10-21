@@ -118,6 +118,6 @@ jobs:
       # workspace as ordinary anonymous memory.
       - name: Run unit tests
         run: |
-          sudo prlimit --pid $$ --memlock=-1:-1
-          ulimit -l
+          sudo prlimit --pid $$ --memlock=-1:-1 --nofile=1048576:1048576
+          ulimit -l -n
           contrib/test/run_unit_tests.sh --tests normal-page-tests.txt --page-sz normal -j 2
