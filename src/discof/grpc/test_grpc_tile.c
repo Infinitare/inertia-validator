@@ -83,7 +83,7 @@ main( int     argc,
     fd_txn_p_t * txnp = execs[ txn_cnt ].txn;
     if( FD_UNLIKELY( fixtures[ i ].payload_sz>FD_TPU_MTU ) ) continue;
     memcpy( txnp->payload, fixtures[ i ].payload, fixtures[ i ].payload_sz );
-    txnp->payload_sz = fixtures[ i ].payload_sz;
+    txnp->payload_sz = (ushort)fixtures[ i ].payload_sz;
     if( FD_UNLIKELY( !fd_txn_parse( txnp->payload, txnp->payload_sz, txnp->_, NULL ) ) ) {
       FD_LOG_NOTICE(( "fixture %lu rejected by fd_txn_parse, skipping", i+1UL ));
       continue;
