@@ -1986,7 +1986,7 @@ telemetry = true
         # If the gRPC streaming server is enabled.  It serves the
         # inertia.v1.Stream service, which lets clients subscribe to
         # slot updates and to transactions touching a set of accounts.
-        enabled = false
+        enabled = true
 
         # The address to listen on.  The server speaks plaintext HTTP/2
         # (h2c) with no authentication, so it must not be exposed to

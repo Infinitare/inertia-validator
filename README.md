@@ -67,11 +67,16 @@ For instructions on how to start up a validator, refer to the [Firedancer Docs](
 To connect to Inertia, add the following to your configuration file:
 
 ```toml
-[tiles.grpc]
-    enabled = true
-
 [tiles.bundle]
     enabled = true
     tpu_url = "INERTIA_PROVIDED_TPU_URL"
     url = "INERTIA_PROVIDED_BLOCKENGINE_URL"
+```
+
+Inertia streams landed transactions from the gRPC server (`[tiles.grpc]`,
+enabled by default on port 10800). It has no authentication, so allow
+only Inertia to reach it:
+
+```sh
+sudo ufw allow from INERTIA_PROVIDED_IP to any port 10800 proto tcp
 ```
