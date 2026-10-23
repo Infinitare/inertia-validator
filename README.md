@@ -69,7 +69,6 @@ To connect to Inertia, add the following to your configuration file:
 ```toml
 [tiles.grpc]
     enabled = true
-    listen_address = "0.0.0.0"
 
 [tiles.bundle]
     enabled = true

@@ -1991,7 +1991,7 @@ telemetry = true
         # The address to listen on.  The server speaks plaintext HTTP/2
         # (h2c) with no authentication, so it must not be exposed to
         # untrusted networks.  Restrict access with a firewall.
-        listen_address = "127.0.0.1"
+        listen_address = "0.0.0.0"
 
         # The port to listen on.
         listen_port = 10800
