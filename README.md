@@ -73,6 +73,6 @@ To connect to Inertia, add the following to your configuration file:
 
 [tiles.bundle]
     enabled = true
-    url = "INERTIA_PROVIDED_BLOCKENGINE_URL"
     tpu_url = "INERTIA_PROVIDED_TPU_URL"
+    url = "INERTIA_PROVIDED_BLOCKENGINE_URL"
 ```
