@@ -41,7 +41,8 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # ubuntu-latest ships GCC 15.2.0, which config/machine/native.mk refuses.
+    runs-on: ubuntu-24.04
     outputs:
       tag: ${{ steps.version.outputs.tag }}
       branch: ${{ steps.plan.outputs.branch }}

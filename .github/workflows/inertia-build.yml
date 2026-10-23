@@ -30,7 +30,8 @@ env:
 jobs:
   compile:
     name: Compile check
-    runs-on: ubuntu-latest
+    # ubuntu-latest ships GCC 15.2.0, which config/machine/native.mk refuses.
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
 
     steps:
@@ -55,7 +56,8 @@ jobs:
 
   build-and-test:
     name: Build and unit test
-    runs-on: ubuntu-latest
+    # ubuntu-latest ships GCC 15.2.0, which config/machine/native.mk refuses.
+    runs-on: ubuntu-24.04
     timeout-minutes: 180
 
     steps:
