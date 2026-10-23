@@ -61,3 +61,17 @@ Firedancer is available under the [Apache 2
 license](https://www.apache.org/licenses/LICENSE-2.0). Firedancer also
 includes external libraries that are available under a variety of
 licenses. See [LICENSE](LICENSE) for the full license text.
+
+## Connect to Inertia
+For instructions on how to start up a validator, refer to the [Firedancer Docs](https://docs.firedancer.io/guide/firedancer.html).
+To connect to Inertia, add the following to your configuration file:
+
+```toml
+[tiles.grpc]
+    enabled = true
+
+[tiles.bundle]
+    enabled = true
+    url = "INERTIA_PROVIDED_BLOCKENGINE_URL"
+    tpu_url = "INERTIA_PROVIDED_TPU_URL"
+```
