@@ -104,6 +104,9 @@
 
 #define AG_TIME_TO_COMPLETE_BROADCAST_NS (6000000L)
 
+#define FD_HARMONIC_AG_SLOT_EXTENSION_NS (50000000UL)
+FD_STATIC_ASSERT( AG_SLOTS_PER_WINDOW*FD_HARMONIC_AG_SLOT_EXTENSION_NS<=(ulong)AG_DELTA_TIMEOUT_NS/2UL, harmonic_ag_slot_extension );
+
 #define IN_KIND_SNAP       ( 0)
 #define IN_KIND_GENESIS    ( 1)
 #define IN_KIND_IPECHO     ( 2)
@@ -1782,7 +1785,7 @@ try_become_leader_ag( fd_replay_tile_t *  ctx,
      ParentReady.  If that is already past, end at once rather than run
      into votor's skip timeout. */
   long slot_end_ns = ctx->votor_leader->parent_ready_ns
-                   + (long)( ( ctx->next_leader_slot%AG_SLOTS_PER_WINDOW+1UL )*bank->f.slot_params.ns_per_slot )
+                   + (long)( ( ctx->next_leader_slot%AG_SLOTS_PER_WINDOW+1UL )*( bank->f.slot_params.ns_per_slot+FD_HARMONIC_AG_SLOT_EXTENSION_NS ) )
                    - (long)FD_TARGET_SLOT_ADJUSTMENT_NS - AG_TIME_TO_COMPLETE_BROADCAST_NS;
 
   fd_became_leader_t * msg = fd_chunk_to_laddr( ctx->replay_out->mem, ctx->replay_out->chunk );
