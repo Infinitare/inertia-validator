@@ -432,6 +432,10 @@ int
 fd_bundle_client_step_reconnect( fd_bundle_tile_t * ctx,
                                  long               now );
 
+void
+fd_bundle_client_step_leader_window( fd_bundle_tile_t * ctx,
+                                     int *              charge_busy );
+
 /* fd_bundle_client_next_deadline returns when
    fd_bundle_client_step next needs to run absent any fd event: the
    earliest pending timeout (keepalive, gRPC deadlines, builder info

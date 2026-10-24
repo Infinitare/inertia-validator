@@ -331,6 +331,9 @@ before_credit( fd_bundle_tile_t *  ctx,
     ctx->next_step_deadline   = 0L;
   }
 
+  int const held = ctx->harmonic_pending_len || !pending_txn_empty( ctx->pending_txns );
+  if( FD_UNLIKELY( ctx->leader_window_pending && held ) ) fd_bundle_client_step_leader_window( ctx, charge_busy );
+
   /* Defer gRPC while harmonic staging waits for after_credit so block
      stream order cannot run ahead of verify_out publishes. */
   if( FD_UNLIKELY( ctx->harmonic_pending_len ) ) return;
@@ -343,7 +346,7 @@ before_credit( fd_bundle_tile_t *  ctx,
       int busy = 0;
       fd_bundle_client_step( ctx, &busy );
       if( FD_LIKELY( fired ) ) fd_waker_client_rearm( ctx->waker_client_idx );
-      *charge_busy = busy;
+      *charge_busy |= busy;
       /* A step that made progress may have more buffered work: re-step
          immediately. */
       ctx->next_step_deadline = busy ? 0L : fd_bundle_client_next_deadline( ctx, fd_bundle_now( ctx ) );

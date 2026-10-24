@@ -2533,6 +2533,31 @@ FD_UNIT_TEST( bundle_client_leader_window_info_expiry ) {
   test_bundle_env_destroy( env );
 }
 
+FD_UNIT_TEST( bundle_client_step_leader_window ) {
+  test_bundle_env_t env[1];
+  test_bundle_env_create( env, wksp );
+  test_bundle_env_mock_conn( env );
+  fd_bundle_tile_t * const state = env->state;
+  int busy = 0;
+
+  fd_bundle_client_queue_leader_window_info( state, 10UL, g_clock+(long)1e9 );
+  state->auther.state = FD_BUNDLE_AUTH_STATE_WAIT_TOKENS;
+  fd_bundle_client_step_leader_window( state, &busy );
+  FD_TEST( state->leader_window_pending );
+  FD_TEST( !busy );
+
+  state->auther.state = FD_BUNDLE_AUTH_STATE_DONE_WAIT;
+  fd_bundle_client_step_leader_window( state, &busy );
+  FD_TEST( !state->leader_window_pending );
+  FD_TEST( state->submit_leader_window_info_wait );
+  FD_TEST( state->leader_window_inflight_slot==10UL );
+  FD_TEST( state->metrics.leader_window_submitted_cnt==1UL );
+  FD_TEST( busy );
+  FD_TEST( !fd_grpc_client_tx_pending( state->grpc_client ) );
+
+  test_bundle_env_destroy( env );
+}
+
 /* Every failed leader window info is counted.  The engine losing our
    live block subscription forces a reconnect, other errors do not. */
 

@@ -815,6 +815,48 @@ FD_UNIT_TEST( tls_rx_continues_while_send_blocked ) {
   fd_grpc_client_reset( client );
 }
 
+FD_UNIT_TEST( tls_tx_encrypts_queued_frames ) {
+  fd_grpc_client_reset( client );
+
+  fd_tls_t tls = {0};
+  fd_tlsrec_conn_t cli[1];
+  fd_tlsrec_conn_t srv[1];
+  fd_tlsrec_conn_init( cli, &tls, 0 );
+  fd_tlsrec_conn_init( srv, &tls, 1 );
+  uchar secret_a[ 32 ]; uchar secret_b[ 32 ];
+  for( ulong i=0UL; i<32UL; i++ ) { secret_a[i] = (uchar)(0xa0+i); secret_b[i] = (uchar)(0xb0+i); }
+  test_tls_install_keys( cli, secret_a, secret_b );
+  test_tls_install_keys( srv, secret_b, secret_a );
+
+  int sock[2];
+  FD_TEST( !socketpair( AF_UNIX, SOCK_STREAM, 0, sock ) );
+
+  FD_TEST( fd_grpc_client_tls_tx( client, cli, sock[0] )==0 );
+  FD_TEST( !fd_grpc_client_tls_tx_pending( client ) );
+
+  static uchar const msg[] = "queued";
+  fd_h2_rbuf_push( client->frame_tx, msg, sizeof(msg)-1UL );
+  FD_TEST( fd_grpc_client_tls_tx( client, cli, sock[0] )==0 );
+  FD_TEST( !fd_grpc_client_tx_pending( client ) );
+  FD_TEST( !fd_grpc_client_tls_tx_pending( client ) );
+
+  uchar wire[ 256 ];
+  long wire_sz = recv( sock[1], wire, sizeof(wire), MSG_DONTWAIT );
+  FD_TEST( wire_sz>0L );
+  fd_tlsrec_slice_t wire_slice[1];
+  fd_tlsrec_slice_init( wire_slice, wire, (ulong)wire_sz );
+  uchar srv_tx[ 64 ]; ulong srv_tx_sz = sizeof(srv_tx);
+  uchar app_rx[ 64 ]; ulong app_rx_sz = sizeof(app_rx);
+  FD_TEST( fd_tlsrec_conn_rx( srv, wire_slice, srv_tx, &srv_tx_sz, app_rx, &app_rx_sz )==FD_TLSREC_SUCCESS );
+  FD_TEST( !srv_tx_sz );
+  FD_TEST( app_rx_sz==sizeof(msg)-1UL );
+  FD_TEST( !memcmp( app_rx, msg, app_rx_sz ) );
+
+  FD_TEST( !close( sock[0] ) );
+  FD_TEST( !close( sock[1] ) );
+  fd_grpc_client_reset( client );
+}
+
 /* Deadlines fire on time even if frame_tx has no room for RST_STREAM.
    Expired requests get no further callbacks or DATA, and RST_STREAM
    waits for room.  wnd: unrelated stream wanting a WINDOW_UPDATE,

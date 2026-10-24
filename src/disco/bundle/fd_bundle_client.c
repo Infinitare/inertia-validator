@@ -698,15 +698,11 @@ fd_bundle_client_log_status( fd_bundle_tile_t * ctx ) {
   }
 }
 
-void
-fd_bundle_client_step( fd_bundle_tile_t * ctx,
-                       int *              charge_busy ) {
-  /* Edge-trigger logging with rate limiting */
-  fd_bundle_client_step1( ctx, charge_busy );
-  fd_bundle_client_log_status( ctx );
-
+static void
+fd_bundle_client_flush( fd_bundle_tile_t * ctx,
+                        int *              charge_busy ) {
   if( FD_UNLIKELY( ctx->tcp_sock_connected && fd_grpc_client_tx_pending( ctx->grpc_client ) ) ) {
-    int flush_err = ctx->is_ssl ? fd_grpc_client_tls_flush     ( ctx->grpc_client, ctx->tcp_sock )
+    int flush_err = ctx->is_ssl ? fd_grpc_client_tls_tx         ( ctx->grpc_client, ctx->tls_conn, ctx->tcp_sock )
                                 : fd_grpc_client_tx_flush_socket( ctx->grpc_client, ctx->tcp_sock );
     if( FD_UNLIKELY( -1==flush_err ) ) {
       fd_bundle_client_reset( ctx );
@@ -724,6 +720,28 @@ fd_bundle_client_step( fd_bundle_tile_t * ctx,
     want |= ctx->is_ssl && fd_grpc_client_tls_tx_pending( ctx->grpc_client );
     fd_bundle_client_epoll_out( ctx, want );
   }
+}
+
+void
+fd_bundle_client_step( fd_bundle_tile_t * ctx,
+                       int *              charge_busy ) {
+  /* Edge-trigger logging with rate limiting */
+  fd_bundle_client_step1( ctx, charge_busy );
+  fd_bundle_client_log_status( ctx );
+  fd_bundle_client_flush( ctx, charge_busy );
+}
+
+void
+fd_bundle_client_step_leader_window( fd_bundle_tile_t * ctx,
+                                     int *              charge_busy ) {
+  if( FD_UNLIKELY( !ctx->grpc_client || !ctx->tcp_sock_connected || ctx->defer_reset ) ) return;
+  if( FD_UNLIKELY( ctx->auther.needs_poll || ctx->auther.state<FD_BUNDLE_AUTH_STATE_DONE_WAIT ) ) return;
+  long now = fd_bundle_now( ctx );
+  if( FD_UNLIKELY( fd_keepalive_is_timeout( ctx->keepalive, now ) ) ) return;
+  if( FD_UNLIKELY( fd_bundle_tile_should_stall( ctx, now ) ) ) return;
+  if( FD_UNLIKELY( !fd_bundle_client_send_leader_window_info( ctx, now ) ) ) return;
+  *charge_busy = 1;
+  fd_bundle_client_flush( ctx, charge_busy );
 }
 
 void
