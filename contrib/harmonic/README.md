@@ -248,6 +248,12 @@ every harmonic release rather than on upstream ones:
   without block mode.
 * Gossip advertises `FD_GOSSIP_CONTACT_INFO_CLIENT_FIREDANCER`, not
   harmonic's client id.
+* The bundle tile queues bundles separately from packets
+  (`pending_bundles` in `fd_bundle_tile_private.h`) and publishes them
+  first; it reads the block engine connection whenever no bundle is
+  queued and the relayer connection only while the packet queue is
+  below half full.  Harmonic's tile has one FIFO and reads the block
+  engine only once it is empty, so relayer packets delay bundles.
 
 ### The plugin header
 

@@ -529,6 +529,7 @@ deliberate exception with lint-allow="<rule id>")
         <summary>Local wall clock minus server timestamp per block engine message; includes clock skew, negative clamped to 0</summary>
     </histogram>
     <gauge name="TxnPending" summary="Transactions buffered and waiting to be published" />
+    <gauge name="BundleTxnPending" summary="Bundle transactions buffered and waiting to be published, included in TxnPending" lint-allow="tile-prefix" />
     <counter name="TxnBufferFullDropped" summary="Transactions dropped because the pending transaction buffer was full" />
 </tile>
 

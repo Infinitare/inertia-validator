@@ -390,6 +390,7 @@
 | <span class="metrics-name">bundle_&#8203;leader_&#8203;window_&#8203;request_&#8203;expired_&#8203;dropped</span> | counter | Leader window info requests never sent because the slot ended or the next leader slot superseded them |
 | <span class="metrics-name">bundle_&#8203;message_&#8203;rx_&#8203;delay_&#8203;nanos</span> | histogram | Local wall clock minus server timestamp per block engine message; includes clock skew, negative clamped to 0 |
 | <span class="metrics-name">bundle_&#8203;txn_&#8203;pending</span> | gauge | Transactions buffered and waiting to be published |
+| <span class="metrics-name">bundle_&#8203;bundle_&#8203;txn_&#8203;pending</span> | gauge | Bundle transactions buffered and waiting to be published, included in TxnPending |
 | <span class="metrics-name">bundle_&#8203;txn_&#8203;buffer_&#8203;full_&#8203;dropped</span> | counter | Transactions dropped because the pending transaction buffer was full |
 
 </div>

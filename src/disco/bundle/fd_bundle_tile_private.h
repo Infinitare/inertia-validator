@@ -54,12 +54,13 @@ typedef struct {
   uchar  revert_protected; /* 0 for a standalone block txn */
 } fd_bundle_harmonic_staged_txn_t;
 
-/* Pending transaction buffer.  gRPC callbacks push decoded bundle and
-   packet transactions here.  after_credit drains by writing to dcache
-   and calling fd_stem_publish.  Harmonic block txns use the parallel
-   harmonic_staging[] buffer instead.
+/* Pending transaction buffers.  gRPC callbacks push decoded bundle
+   transactions to pending_bundles and packets to pending_txns.
+   after_credit drains bundles first, then packets, by writing to
+   dcache and calling fd_stem_publish.  Harmonic block txns use the
+   separate harmonic_staging[] buffer instead.
 
-   Sized to match the bundle_verif output link depth. */
+   Each is sized to match the bundle_verif output link depth. */
 
 struct fd_bundle_pending_txn {
   uchar  payload[ FD_TXN_MTU ];
@@ -295,6 +296,7 @@ struct fd_bundle_tile {
   fd_bundle_out_ctx_t       plugin_out;
   fd_bundle_out_ctx_t       gossip_out;
   fd_bundle_pending_txn_t * pending_txns;
+  fd_bundle_pending_txn_t * pending_bundles;
 
   /* App metrics */
   fd_bundle_metrics_t metrics;

@@ -19,6 +19,7 @@ struct test_bundle_env {
   uchar *           out_dcache;
   int               server_sock;
   void *            deque_mem;
+  void *            bundle_deque_mem;
   ulong             waker_fseq[ FD_FSEQ_FOOTPRINT/sizeof(ulong) ] __attribute__((aligned(FD_FSEQ_ALIGN)));
   ulong             harmonic_lost_fseq[ FD_FSEQ_FOOTPRINT/sizeof(ulong) ] __attribute__((aligned(FD_FSEQ_ALIGN)));
 
@@ -99,6 +100,10 @@ test_bundle_env_create( test_bundle_env_t * env,
   FD_TEST( env->deque_mem );
   state->pending_txns = pending_txn_join( pending_txn_new( env->deque_mem, pending_max ) );
   FD_TEST( state->pending_txns );
+  env->bundle_deque_mem  = fd_wksp_alloc_laddr( wksp, pending_txn_align(), pending_txn_footprint( pending_max ), 1UL );
+  FD_TEST( env->bundle_deque_mem );
+  state->pending_bundles = pending_txn_join( pending_txn_new( env->bundle_deque_mem, pending_max ) );
+  FD_TEST( state->pending_bundles );
 
   /* Allocate harmonic staging (mirrors privileged_init) */
   state->harmonic_staging_max = fd_bundle_harmonic_staging_max( state->grpc_buf_max );
@@ -261,6 +266,7 @@ test_bundle_env_destroy( test_bundle_env_t * env ) {
   fd_wksp_free_laddr( fd_dcache_delete( fd_dcache_leave( env->out_dcache ) ) );
   fd_wksp_free_laddr( env->state->grpc_client_mem );
   fd_wksp_free_laddr( pending_txn_delete( pending_txn_leave( env->state->pending_txns ) ) );
+  fd_wksp_free_laddr( pending_txn_delete( pending_txn_leave( env->state->pending_bundles ) ) );
   if( env->state->harmonic_payload ) {
     fd_wksp_free_laddr( env->state->harmonic_payload );
   }

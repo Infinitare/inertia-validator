@@ -465,7 +465,7 @@ static fd_metrics_sample_field_t const fields_quic[ 195 ] = {
   { 0, 0U, FD_METRICS_SAMPLE_CLOSE, NULL, 0UL },
 };
 
-static fd_metrics_sample_field_t const fields_bundle[ 88 ] = {
+static fd_metrics_sample_field_t const fields_bundle[ 89 ] = {
   { FD_METRICS_GAUGE_TILE_PID_OFF, 8U, FD_METRICS_SAMPLE_U64, NULL, 0UL },
   { FD_METRICS_GAUGE_TILE_TID_OFF, 9U, FD_METRICS_SAMPLE_U64, NULL, 0UL },
   { FD_METRICS_GAUGE_TILE_LAST_CPU_INDEX_OFF, 10U, FD_METRICS_SAMPLE_U64, NULL, 0UL },
@@ -553,6 +553,7 @@ static fd_metrics_sample_field_t const fields_bundle[ 88 ] = {
   { FD_METRICS_HISTOGRAM_BUNDLE_MESSAGE_RX_DELAY_NANOS_OFF+16, 17U, FD_METRICS_SAMPLE_U64, NULL, 0UL },
   { 0, 0U, FD_METRICS_SAMPLE_CLOSE, NULL, 0UL },
   { FD_METRICS_GAUGE_BUNDLE_TXN_PENDING_OFF, 38U, FD_METRICS_SAMPLE_U64, NULL, 0UL },
+  { FD_METRICS_GAUGE_BUNDLE_BUNDLE_TXN_PENDING_OFF, 421682557U, FD_METRICS_SAMPLE_U64, NULL, 0UL },
   { FD_METRICS_COUNTER_BUNDLE_TXN_BUFFER_FULL_DROPPED_OFF, 39U, FD_METRICS_SAMPLE_U64, NULL, 0UL },
 };
 
@@ -4099,7 +4100,7 @@ fd_metrics_sample_schema_t const fd_metrics_sample_tiles[] = {
   { "mlx5", 23U, fields_mlx5, 66UL, 800UL },
   { "sock", 24U, fields_sock, 52UL, 657UL },
   { "quic", 25U, fields_quic, 195UL, 2087UL },
-  { "bundle", 26U, fields_bundle, 88UL, 1053UL },
+  { "bundle", 26U, fields_bundle, 89UL, 1068UL },
   { "verify", 27U, fields_verify, 47UL, 598UL },
   { "dedup", 28U, fields_dedup, 44UL, 564UL },
   { "resolv", 29U, fields_resolv, 81UL, 915UL },

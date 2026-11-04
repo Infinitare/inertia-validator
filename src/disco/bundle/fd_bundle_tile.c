@@ -57,6 +57,7 @@ scratch_footprint( fd_topo_tile_t const * tile ) {
   /* harmonic: second gRPC client for TPU endpoint */
   l = FD_LAYOUT_APPEND( l, fd_grpc_client_align(),    fd_grpc_client_footprint( tile->bundle.buf_sz ) );
   l = FD_LAYOUT_APPEND( l, pending_txn_align(),       pending_txn_footprint( pending_max )            );
+  l = FD_LAYOUT_APPEND( l, pending_txn_align(),       pending_txn_footprint( pending_max )            );
   /* Harmonic staging, sized to what one client step can stage */
   l = FD_LAYOUT_APPEND( l, alignof(fd_bundle_harmonic_staged_txn_t),
                            sizeof(fd_bundle_harmonic_staged_txn_t) * fd_bundle_harmonic_staging_max( tile->bundle.buf_sz ) );
@@ -116,7 +117,8 @@ metrics_write( fd_bundle_tile_t * ctx ) {
   FD_MCNT_SET  ( BUNDLE, CLIENT_FAILED_DECODE,      ctx->metrics.decode_fail_cnt               );
   FD_MCNT_SET  ( BUNDLE, CLIENT_FAILED_TRANSPORT,   ctx->metrics.transport_fail_cnt            );
   FD_MCNT_SET  ( BUNDLE, CLIENT_FAILED_NO_FEE_INFO, ctx->metrics.missing_builder_info_fail_cnt );
-  FD_MGAUGE_SET( BUNDLE, TXN_PENDING,               pending_txn_cnt( ctx->pending_txns )       );
+  FD_MGAUGE_SET( BUNDLE, TXN_PENDING,               pending_txn_cnt( ctx->pending_txns )+pending_txn_cnt( ctx->pending_bundles ) );
+  FD_MGAUGE_SET( BUNDLE, BUNDLE_TXN_PENDING,        pending_txn_cnt( ctx->pending_bundles )    );
   FD_MCNT_SET  ( BUNDLE, TXN_BUFFER_FULL_DROPPED,   ctx->metrics.backpressure_drop_cnt         );
 
   FD_MGAUGE_SET( BUNDLE, LAST_RTT_NANOS,      (ulong)ctx->rtt->latest_rtt   );
@@ -331,14 +333,14 @@ before_credit( fd_bundle_tile_t *  ctx,
     ctx->next_step_deadline   = 0L;
   }
 
-  int const held = ctx->harmonic_pending_len || !pending_txn_empty( ctx->pending_txns );
+  int const held = ctx->harmonic_pending_len || !pending_txn_empty( ctx->pending_bundles );
   if( FD_UNLIKELY( ctx->leader_window_pending && held ) ) fd_bundle_client_step_leader_window( ctx, charge_busy );
 
   /* Defer gRPC while harmonic staging waits for after_credit so block
      stream order cannot run ahead of verify_out publishes. */
   if( FD_UNLIKELY( ctx->harmonic_pending_len ) ) return;
 
-  if( pending_txn_empty( ctx->pending_txns ) ) {
+  if( pending_txn_empty( ctx->pending_bundles ) ) {
     int  fired = fd_fseq_query( ctx->waker_fseq )==1UL;
     long now   = fd_bundle_now( ctx );
     if( FD_UNLIKELY( fired || now>=ctx->next_step_deadline ) ) {
@@ -426,14 +428,15 @@ after_credit( fd_bundle_tile_t *  ctx,
     }
   }
 
-  if( !published_block && !pending_txn_empty( ctx->pending_txns ) ) {
-    fd_bundle_pending_txn_t * head = pending_txn_peek_head( ctx->pending_txns );
+  fd_bundle_pending_txn_t * txns = fd_ptr_if( !pending_txn_empty( ctx->pending_bundles ), ctx->pending_bundles, ctx->pending_txns );
+  if( !published_block && !pending_txn_empty( txns ) ) {
+    fd_bundle_pending_txn_t * head = pending_txn_peek_head( txns );
     ulong drain_seq = head->bundle_seq;
     ulong drain_sig = head->sig;
     ulong drain_cnt = 0UL;
 
     do {
-      fd_bundle_pending_txn_t const * txn = pending_txn_peek_head( ctx->pending_txns );
+      fd_bundle_pending_txn_t const * txn = pending_txn_peek_head( txns );
 
       fd_txn_m_t * txnm = fd_chunk_to_laddr( ctx->verify_out.mem, ctx->verify_out.chunk );
       *txnm = (fd_txn_m_t) {
@@ -458,16 +461,17 @@ after_credit( fd_bundle_tile_t *  ctx,
       fd_stem_publish( stem, ctx->verify_out.idx, txn->sig, ctx->verify_out.chunk, sz, 0UL, 0UL, tspub );
       ctx->verify_out.chunk = fd_dcache_compact_next( ctx->verify_out.chunk, sz, ctx->verify_out.chunk0, ctx->verify_out.wmark );
 
-      pending_txn_remove_head( ctx->pending_txns );
+      pending_txn_remove_head( txns );
       drain_cnt++;
-    } while( fd_bundle_drain_continue( ctx->pending_txns, drain_sig, drain_seq, drain_cnt, STEM_BURST ) );
+    } while( fd_bundle_drain_continue( txns, drain_sig, drain_seq, drain_cnt, STEM_BURST ) );
 
     *charge_busy = 1;
     *opt_poll_in = 0;
   }
 
   /* Drive the TPU endpoint if enabled */
-  if( FD_UNLIKELY( ctx->tpu_conn_enabled && !ctx->halt_signing ) ) {
+  if( FD_UNLIKELY( ctx->tpu_conn_enabled && !ctx->halt_signing &&
+                   pending_txn_cnt( ctx->pending_txns )<pending_txn_max( ctx->pending_txns )/2UL ) ) {
     fd_bundle_tpu_client_step( ctx, charge_busy );
   }
 
@@ -723,6 +727,7 @@ privileged_init( fd_topo_t const *      topo,
   void *             grpc_mem    = FD_SCRATCH_ALLOC_APPEND( l, fd_grpc_client_align(),    fd_grpc_client_footprint( tile->bundle.buf_sz ) );
   void *             grpc_tpu_mem = FD_SCRATCH_ALLOC_APPEND( l, fd_grpc_client_align(),    fd_grpc_client_footprint( tile->bundle.buf_sz ) );
   void *             deque_mem   = FD_SCRATCH_ALLOC_APPEND( l, pending_txn_align(),        pending_txn_footprint( pending_max )            );
+  void *             bundle_deque_mem = FD_SCRATCH_ALLOC_APPEND( l, pending_txn_align(),   pending_txn_footprint( pending_max )            );
   void *             harmonic_staging_mem = FD_SCRATCH_ALLOC_APPEND( l,
       alignof(fd_bundle_harmonic_staged_txn_t),
       sizeof(fd_bundle_harmonic_staged_txn_t) * fd_bundle_harmonic_staging_max( tile->bundle.buf_sz ) );
@@ -740,6 +745,7 @@ privileged_init( fd_topo_t const *      topo,
   ctx->tpu_tcp_sock     = -1;
   ctx->waker_client_idx = tile->waker_client_idx;
   ctx->pending_txns     = pending_txn_join( pending_txn_new( deque_mem, pending_max ) );
+  ctx->pending_bundles  = pending_txn_join( pending_txn_new( bundle_deque_mem, pending_max ) );
   ctx->harmonic_staging     = harmonic_staging_mem;
   ctx->harmonic_staging_max = fd_bundle_harmonic_staging_max( tile->bundle.buf_sz );
   ctx->harmonic_payload     = harmonic_payload_mem;

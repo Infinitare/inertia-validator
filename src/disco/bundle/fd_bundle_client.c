@@ -793,12 +793,12 @@ fd_bundle_tile_publish_bundle_txn(
     return;
   }
 
-  if( FD_UNLIKELY( pending_txn_full( ctx->pending_txns ) ) ) {
+  if( FD_UNLIKELY( pending_txn_full( ctx->pending_bundles ) ) ) {
     ctx->metrics.backpressure_drop_cnt++;
     return;
   }
 
-  fd_bundle_pending_txn_t * entry = pending_txn_push_tail_nocopy( ctx->pending_txns );
+  fd_bundle_pending_txn_t * entry = pending_txn_push_tail_nocopy( ctx->pending_bundles );
   fd_memcpy( entry->payload, txn, txn_sz );
   entry->payload_sz       = (ushort)txn_sz;
   entry->source_ipv4      = source_ipv4;
@@ -948,7 +948,7 @@ fd_bundle_client_visit_pb_bundle_uuid(
 
   if( FD_UNLIKELY( ctx->bundle_txn_cnt>FD_BUNDLE_CLIENT_MAX_TXN_PER_BUNDLE ) ) return true;
 
-  if( FD_UNLIKELY( pending_txn_avail( ctx->pending_txns )<ctx->bundle_txn_cnt ) ) {
+  if( FD_UNLIKELY( pending_txn_avail( ctx->pending_bundles )<ctx->bundle_txn_cnt ) ) {
     ctx->metrics.backpressure_drop_cnt += ctx->bundle_txn_cnt;
     return true;
   }

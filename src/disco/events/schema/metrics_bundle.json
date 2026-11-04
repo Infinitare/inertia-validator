@@ -150,6 +150,7 @@
         },
         "leader_window_request_tx":              { "type": "UInt64",                     "compression": "DoubleDelta, ZSTD", "description": "Leader window info requests sent to the block engine", "field_number": 321113832 },
         "leader_window_request_failed":          { "type": "UInt64",                     "compression": "DoubleDelta, ZSTD", "description": "Leader window info requests that the block engine rejected, that timed out, or whose connection failed", "field_number": 508773311 },
-        "leader_window_request_expired_dropped": { "type": "UInt64",                     "compression": "DoubleDelta, ZSTD", "description": "Leader window info requests never sent because the slot ended or the next leader slot superseded them", "field_number": 425641794 }
+        "leader_window_request_expired_dropped": { "type": "UInt64",                     "compression": "DoubleDelta, ZSTD", "description": "Leader window info requests never sent because the slot ended or the next leader slot superseded them", "field_number": 425641794 },
+        "bundle_txn_pending":                    { "type": "UInt64",                     "compression": "T64, ZSTD",         "description": "Bundle transactions buffered and waiting to be published, included in TxnPending", "field_number": 421682557 }
     }
 }
