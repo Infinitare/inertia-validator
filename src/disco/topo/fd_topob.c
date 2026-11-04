@@ -40,7 +40,6 @@ fd_topob_new( void * mem,
 
   topo->sleep_obj_id = ULONG_MAX;
 
-  topo->agave_affinity_cnt = 0;
   topo->blocklist_cores_cnt = 0;
 
   return topo;
@@ -571,6 +570,7 @@ static char const * ALWAYS[] = {
   "gui",    /* FIREDANCER only */
   "guih",   /* FRANK only */
   "rpc",    /* FIREDANCER only */
+  "grpc",   /* FIREDANCER only */
   "gossvf", /* FIREDANCER only */
   "gossip", /* FIREDANCER only */
   "repair", /* FIREDANCER only */
@@ -879,8 +879,7 @@ auto_tile_cpu_l3( fd_topo_tile_t * tile,
 
 void
 fd_topob_auto_layout_cpus( fd_topo_t *      topo,
-                           fd_topo_cpus_t * cpus,
-                           int              reserve_agave_cores ) {
+                           fd_topo_cpus_t * cpus ) {
   /* Incredibly simple automatic layout system for now ... just assign
      tiles to CPU cores in NUMA sequential order, except for a few tiles
      which should be floating. */
@@ -979,22 +978,19 @@ fd_topob_auto_layout_cpus( fd_topo_t *      topo,
   }
   ulong l3_tiles_to_assign = always_tiles_to_assign + hot_post_start_tiles +
       fd_ulong_max( pinned_startup_tiles, pinned_post_start_tiles-hot_post_start_tiles );
-  int l3_layout = topo->sleep_obj_id!=ULONG_MAX && !reserve_agave_cores && fd_topo_cpus_l3_complete( cpus ) &&
+  int l3_layout = topo->sleep_obj_id!=ULONG_MAX && fd_topo_cpus_l3_complete( cpus ) &&
                   available_physical>=l3_tiles_to_assign;
 
   /* If we have enough physical cores (excluding HT siblings) for all
      tiles that need assignment, exclude HT siblings so that no tile
-     gets scheduled on a hyperthread pair.
-     For Frankendancer, we reserve 2x cores so we have enough for Agave */
-  _Bool skip_ht_pairs = reserve_agave_cores
-    ? (available_physical>=2*tiles_to_assign) /* Frankendancer */
-    : (available_physical>=tiles_to_assign);  /* Firedancer */
+     gets scheduled on a hyperthread pair. */
+  _Bool skip_ht_pairs = available_physical>=tiles_to_assign;
 
   /* Otherwise spend the spare logical CPUs on whole cores for the
      dedicated tiles.  Each costs its sibling, like a critical tile.
      The L3 layout already places them on whole cores. */
   ulong dedicated_budget = 0UL;
-  if( !skip_ht_pairs && !l3_layout && !reserve_agave_cores ) {
+  if( !skip_ht_pairs && !l3_layout ) {
     ulong free_logical = 0UL;
     for( ulong i=0UL; i<cpus->cpu_cnt; i++ ) free_logical += !cpu_bv_test( cpu_assigned, i );
     ulong critical_cnt = 0UL;
@@ -1054,26 +1050,13 @@ fd_topob_auto_layout_cpus( fd_topo_t *      topo,
 
     if( FD_UNLIKELY( !tile_is_floating( tile ) ) ) FD_LOG_WARNING(( "auto layout cannot affine tile `%s:%lu` because it is unknown. Leaving it floating", tile->name, tile->kind_id ));
   }
-
-  topo->agave_affinity_cnt = 0UL;
-  if( FD_UNLIKELY( reserve_agave_cores ) ) {
-    for( ulong i=cpu_idx; i<cpus->cpu_cnt; i++ ) {
-      if( FD_UNLIKELY( !cpus->cpu[ cpu_ordering[ i ] ].online ) ) continue;
-      if( FD_UNLIKELY( cpu_bv_test( cpu_assigned, cpu_ordering[ i ] ) ) ) continue;
-
-      if( FD_LIKELY( topo->agave_affinity_cnt<sizeof(topo->agave_affinity_cpu_idx)/sizeof(topo->agave_affinity_cpu_idx[0]) ) ) {
-        topo->agave_affinity_cpu_idx[ topo->agave_affinity_cnt++ ] = cpu_ordering[ i ];
-      }
-    }
-  }
 }
 
 void
-fd_topob_auto_layout( fd_topo_t * topo,
-                      int         reserve_agave_cores ) {
+fd_topob_auto_layout( fd_topo_t * topo ) {
   fd_topo_cpus_t cpus[1];
   fd_topo_cpus_init( cpus );
-  fd_topob_auto_layout_cpus( topo, cpus, reserve_agave_cores );
+  fd_topob_auto_layout_cpus( topo, cpus );
 }
 
 ulong

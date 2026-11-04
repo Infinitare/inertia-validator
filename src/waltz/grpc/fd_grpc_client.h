@@ -274,6 +274,11 @@ int
 fd_grpc_client_tls_flush( fd_grpc_client_t * client,
                           int                sock_fd );
 
+int
+fd_grpc_client_tls_tx( fd_grpc_client_t * client,
+                       fd_tlsrec_conn_t * tls_conn,
+                       int                sock_fd );
+
 /* fd_grpc_client_rxtx_tls drives I/O against a TCP socket with
    fd_tlsrec encryption.  Handles TLS handshake, encrypts outgoing
    frames, and decrypts incoming data.
