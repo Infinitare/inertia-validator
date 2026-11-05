@@ -173,13 +173,11 @@ fd_topob_tile_out( fd_topo_t *  topo,
    for testing. */
 
 void
-fd_topob_auto_layout( fd_topo_t * topo,
-                      int         reserve_agave_cores );
+fd_topob_auto_layout( fd_topo_t * topo );
 
 void
 fd_topob_auto_layout_cpus( fd_topo_t *      topo,
-                           fd_topo_cpus_t * cpus,
-                           int              reserve_agave_cores );
+                           fd_topo_cpus_t * cpus );
 
 /* Finish creating the topology.  Lays out all the objects in the
    given workspaces, and sizes everything correctly.  Also validates

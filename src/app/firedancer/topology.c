@@ -21,6 +21,7 @@
 #include "../../choreo/rotor/fd_rotor.h"
 #include "../../disco/net/fd_net_tile.h"
 #include "../../discof/backup/fd_backup.h"
+#include "../../disco/bundle/fd_bundle_tpu.h"
 #include "../../discof/restore/fd_snapct_tile.h"
 #include "../../disco/gui/fd_gui_config_parse.h"
 #include "../../disco/quic/fd_tpu.h"
@@ -281,6 +282,7 @@ fd_topo_initialize( config_t * config ) {
   int snapshots_enabled   = !!config->gossip.entrypoints_cnt;
   int snapmk_enabled      = !!snapzp_tile_cnt;
   int rpc_enabled         = config->tiles.rpc.enabled;
+  int grpc_enabled        = config->tiles.grpc.enabled;
   int telemetry_enabled   = config->telemetry && strcmp( config->tiles.event.url, "" );
   int leader_enabled      = !!config->firedancer.layout.enable_block_production;
   int rserve_enabled      = config->tiles.rserve.enabled;
@@ -681,6 +683,11 @@ fd_topo_initialize( config_t * config ) {
     fd_topob_tile( topo, "rpc", "rpc", "metric_in", tile_to_cpu[ topo->tile_cnt ], 0, 1, 0, 1 );
   }
 
+  if( FD_UNLIKELY( grpc_enabled ) ) {
+    fd_topob_wksp( topo, "grpc" );
+    fd_topob_tile( topo, "grpc", "grpc", "metric_in", tile_to_cpu[ topo->tile_cnt ], 0, 0, 0, 0 );
+  }
+
   if( FD_UNLIKELY( solcap_enabled ) ) {
     fd_topob_wksp( topo, "solcap" );
     fd_topob_tile( topo, "solcap", "solcap", "metric_in", tile_to_cpu[ topo->tile_cnt ], 0, 0, 0, 0 );
@@ -958,6 +965,14 @@ fd_topo_initialize( config_t * config ) {
 
     if( leader_enabled ) fd_topob_tile_in(  topo, "bundle", 0UL,           "metric_in", "replay_slot",    0UL,        FD_TOPOB_UNRELIABLE, FD_TOPOB_POLLED   );
 
+    /* bundle_gossi: bundle tile publishes TPU endpoint updates to gossip. */
+    if( leader_enabled ) {
+      fd_topob_wksp( topo, "bundle_gossi" );
+      fd_topob_link( topo, "bundle_gossi", "bundle_gossi", 128UL, sizeof(fd_bundle_tpu_update_t), 1UL );
+      fd_topob_tile_out( topo, "bundle", 0UL, "bundle_gossi", 0UL );
+      fd_topob_tile_in( topo, "gossip", 0UL, "metric_in", "bundle_gossi", 0UL, FD_TOPOB_RELIABLE, FD_TOPOB_POLLED );
+    }
+
     if( config->tiles.gui.enabled ) { /* GUI is the only consumer of bundle_status */
       fd_topob_wksp( topo, "bundle_status" );
       /* bundle_status must be kind of deep, to prevent exhausting
@@ -1021,6 +1036,11 @@ fd_topo_initialize( config_t * config ) {
       fd_topob_tile_in( topo, "rpc",  0UL, "metric_in", "tower_out",    0UL, FD_TOPOB_RELIABLE, FD_TOPOB_POLLED );
     }
     fd_topob_tile_in( topo, "rpc",    0UL, "metric_in", "replay_epoch", 0UL, FD_TOPOB_RELIABLE, FD_TOPOB_POLLED );
+  }
+
+  if( FD_UNLIKELY( grpc_enabled ) ) {
+    fd_topob_tile_in( topo, "grpc", 0UL, "metric_in", "replay_out", 0UL, FD_TOPOB_UNRELIABLE, FD_TOPOB_POLLED );
+    if( leader_enabled ) FOR(execle_tile_cnt) fd_topob_tile_in( topo, "grpc", 0UL, "metric_in", "execle_poh", i, FD_TOPOB_UNRELIABLE, FD_TOPOB_POLLED );
   }
 
   if( FD_UNLIKELY( solcap_enabled ) ) {
@@ -1250,7 +1270,7 @@ fd_topo_initialize( config_t * config ) {
   }
 
   /* Auto layout must run after all fd_topob_tile() calls so every tile gets a blocklist-aware CPU assignment. */
-  if( FD_UNLIKELY( is_auto_affinity ) ) fd_topob_auto_layout( topo, 0 );
+  if( FD_UNLIKELY( is_auto_affinity ) ) fd_topob_auto_layout( topo );
 
   ulong fec_set_cnt = fd_shred_tile_fec_set_cnt( FD_SHRED_FIREDANCER_FEC_EXPOSURE,
                                                   config->tiles.shred.max_pending_shred_sets );
@@ -1935,6 +1955,7 @@ fd_topo_configure_tile( fd_topo_tile_t * tile,
       PARSE_BUNDLE_PUBKEY( pack, tip_payment_program_addr      );
       PARSE_BUNDLE_PUBKEY( pack, tip_distribution_authority    );
       tile->pack.bundle.commission_bps = config->tiles.bundle.commission_bps;
+      tile->pack.bundle.strategy = config->tiles.bundle.strategy_enum;
       fd_cstr_ncpy( tile->pack.bundle.identity_key_path, config->paths.identity_key, sizeof(tile->pack.bundle.identity_key_path) );
       fd_cstr_ncpy( tile->pack.bundle.vote_account_path, config->paths.vote_account, sizeof(tile->pack.bundle.vote_account_path) );
     } else {
@@ -2069,6 +2090,23 @@ fd_topo_configure_tile( fd_topo_tile_t * tile,
       tile->rpc.snapshot_server_port = (ushort)listen_port;
     }
 
+  } else if( FD_UNLIKELY( !strcmp( tile->name, "grpc" ) ) ) {
+
+    if( FD_UNLIKELY( !fd_cstr_to_ip4_addr( config->tiles.grpc.listen_address, &tile->grpc.listen_addr ) ) )
+      FD_LOG_ERR(( "failed to parse grpc listen address `%s`", config->tiles.grpc.listen_address ));
+    tile->grpc.listen_port = config->tiles.grpc.listen_port;
+
+    if( FD_UNLIKELY( !config->tiles.grpc.max_subscriptions || config->tiles.grpc.max_subscriptions>64UL ) )
+      FD_LOG_ERR(( "[tiles.grpc.max_subscriptions] must be in [1,64]" ));
+    if( FD_UNLIKELY( !fd_ulong_is_pow2( config->tiles.grpc.tx_depth ) ) )
+      FD_LOG_ERR(( "[tiles.grpc.tx_depth] must be a power of two" ));
+    if( FD_UNLIKELY( !fd_ulong_is_pow2( config->tiles.grpc.send_buffer_size_mb ) ) )
+      FD_LOG_ERR(( "[tiles.grpc.send_buffer_size_mb] must be a power of two" ));
+
+    tile->grpc.max_subscriptions   = config->tiles.grpc.max_subscriptions;
+    tile->grpc.tx_depth            = config->tiles.grpc.tx_depth;
+    tile->grpc.send_buffer_size_mb = config->tiles.grpc.send_buffer_size_mb;
+
   } else if( FD_UNLIKELY( !strcmp( tile->name, "backt" ) ) ) {
 
     tile->backtest.alpenglow     = config->firedancer.consensus.alpenglow;
@@ -2098,6 +2136,11 @@ fd_topo_configure_tile( fd_topo_tile_t * tile,
     tile->bundle.out_depth = config->tiles.verify.receive_buffer_size;
     tile->bundle.keepalive_interval_nanos = config->tiles.bundle.keepalive_interval_millis * (ulong)1e6;
     tile->bundle.tls_cert_verify = !!config->tiles.bundle.tls_cert_verify;
+    fd_cstr_ncpy( tile->bundle.tpu_url, config->tiles.bundle.tpu_url, sizeof(tile->bundle.tpu_url) );
+    tile->bundle.tpu_url_len = strnlen( tile->bundle.tpu_url, sizeof(tile->bundle.tpu_url)-1UL );
+    fd_cstr_ncpy( tile->bundle.tpu_sni, config->tiles.bundle.tpu_tls_domain_name, sizeof(tile->bundle.tpu_sni) );
+    tile->bundle.tpu_sni_len = strnlen( tile->bundle.tpu_sni, sizeof(tile->bundle.tpu_sni)-1UL );
+    tile->bundle.strategy = config->tiles.bundle.strategy_enum;
 
   } else if( FD_UNLIKELY( !strcmp( tile->name, "solcap" ) ) ) {
 

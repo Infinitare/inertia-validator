@@ -1174,7 +1174,7 @@ fd_event_client_poll( fd_event_client_t * client,
      this poll go out now instead of arming EPOLLOUT on a writable
      socket (a spurious waker roundtrip per message). */
   if( FD_UNLIKELY( client->state!=FD_EVENT_CLIENT_STATE_DISCONNECTED && fd_grpc_client_tx_pending( client->grpc_client ) ) ) {
-    int flush_err = client->use_tls ? fd_grpc_client_tls_flush     ( client->grpc_client, client->sockfd )
+    int flush_err = client->use_tls ? fd_grpc_client_tls_tx         ( client->grpc_client, client->tls_conn, client->sockfd )
                                     : fd_grpc_client_tx_flush_socket( client->grpc_client, client->sockfd );
     if( FD_UNLIKELY( -1==flush_err ) ) {
       disconnect( client, now, DISCONNECT_REASON_TRANSPORT_FAILED, errno, 1 );

@@ -1,0 +1,51 @@
+# Paths that exist only to build Frankendancer (the legacy Rust/C hybrid
+# validator).  Nothing in a Firedancer-only tree references them.
+#
+# This file is the single source of truth for both
+# strip-frankendancer.sh and merge-upstream.sh.  Blank lines and lines
+# starting with '#' are ignored.
+#
+# When an upstream merge drags a new Frankendancer-only directory in,
+# add it here rather than deleting it by hand -- that keeps the next
+# merge automatic.
+
+# The Agave (Rust) validator, linked into Frankendancer as a static lib.
+# Firedancer never links it.  Note this is distinct from Agave used as an
+# *external peer* for localnet tests, which is still supported -- see
+# contrib/test/setup_fd_cluster.sh and contrib/agave-cluster.
+agave
+.gitmodules
+
+# Frankendancer command line binaries.
+src/app/fdctl
+src/app/fddev
+
+# Frankendancer tiles (bank, pohh, resolh, store, plugin, guih).
+src/discoh
+
+# CI action that builds and caches the agave submodule.
+.github/actions/submodule
+
+# Initialises git submodules.  This tree has none (.gitmodules is gone),
+# so the action is a no-op that only costs a lock and a checkout step.
+.github/actions/submodule-init
+
+# Frankendancer docs and release tooling.  Upstream renamed
+# tag-release.py to tag-release-frankendancer.py in v26.
+book/api/cli.md
+contrib/tag-release.py
+contrib/tag-release-frankendancer.py
+
+# Historical (ca 2023-Sep) block diagram of the Frankendancer transaction
+# filtering pipeline, ending at "to Agave validator".
+src/disco/README.md
+
+# Patch applied to the agave submodule to expose Agave's gossip
+# deserializer to a differential fuzzer.  The Local.mk rules that used it
+# are already dropped; without the submodule the patch has no target.
+src/flamenco/gossip/differential_fuzzer.patch
+
+# Extracts the Agave RuntimeTransaction struct layout out of compiled
+# agave_validator object files.  This is the tooling behind
+# src/discoh/bank/fd_bank_abi.c, which is gone.
+contrib/tool/extract_abi.py

@@ -355,7 +355,7 @@ forktest_topo( config_t * config ) {
     }
   }
 
-  if( FD_UNLIKELY( is_auto_affinity ) ) fd_topob_auto_layout( topo, 0 );
+  if( FD_UNLIKELY( is_auto_affinity ) ) fd_topob_auto_layout( topo );
 
   /* Repair and shred share a secret they use to generate the nonces. */
   if( 1 ) {

@@ -2,6 +2,7 @@
 
 #include "../../disco/tiles.h"
 #include "../../disco/pack/fd_pack.h"
+#include "../../disco/fd_txn_m.h"
 #include "../../disco/pack/fd_pack_cost.h"
 #include "../../ballet/blake3/fd_blake3.h"
 #include "../../ballet/bmtree/fd_bmtree.h"
@@ -18,6 +19,21 @@
 #include <time.h>
 #include <linux/futex.h>
 #include "generated/fd_execle_tile_seccomp.h"
+
+/* Harmonic: pack needs to know, at the moment it observes a microblock
+   from the block stream completing, whether it landed anything.  The
+   busy fseq is that observation point, so the fail flag rides on it.
+   Only microblocks whose transactions came from the block stream are
+   ever flagged; everything else keeps the plain sequence number. */
+static inline ulong
+execle_busy_val( ulong              seq,
+                 fd_txn_p_t const * txns,
+                 ulong              txn_cnt ) {
+  if( FD_LIKELY( txn_cnt==0UL || txns[ 0 ].source_tpu!=FD_TXN_M_TPU_SOURCE_HARMONIC ) ) return seq;
+  int any_in_block = 0;
+  for( ulong i=0UL; i<txn_cnt; i++ ) any_in_block |= !!(txns[ i ].flags & FD_TXN_P_FLAGS_EXECUTE_SUCCESS);
+  return seq | fd_ulong_if( !any_in_block, FD_PACK_EXECLE_BUSY_FAIL_FLAG, 0UL );
+}
 
 #define REBATE_BATCH_IDLE_LOOPS      (128UL)
 #define REBATE_BATCH_MAX_MICROBLOCKS (16UL)
@@ -471,7 +487,7 @@ handle_microblock( fd_execle_tile_t *  ctx,
 
   /* Indicate to pack tile we are done processing the transactions so
      it can pack new microblocks using these accounts. */
-  fd_fseq_update( ctx->busy_fseq, seq );
+  fd_fseq_update( ctx->busy_fseq, execle_busy_val( seq, (fd_txn_p_t const *)dst, txn_cnt ) );
 
   /* Now produce the merkle hash of the transactions for inclusion
      (mixin) to the PoH hash.  This is done on the execle tile because
@@ -533,8 +549,10 @@ handle_bundle( fd_execle_tile_t *  ctx,
     ctx->txn_out[ i ].err.txn_err     = FD_RUNTIME_EXECUTE_SUCCESS;
   }
 
+  int commit_first_only = (txn_cnt>1UL) & !!(txns[ 0 ].flags & FD_TXN_P_FLAGS_COMMIT_FIRST_ONLY);
+
   /* Acquire all accdb resources in order to execute the bundle. */
-  int const setup_bundle = fd_runtime_prepare_bundle_accounts( ctx->runtime, bank, ctx->txn_in, ctx->txn_out, txn_cnt )==FD_RUNTIME_EXECUTE_SUCCESS;
+  int setup_bundle = fd_runtime_prepare_bundle_accounts( ctx->runtime, bank, ctx->txn_in, ctx->txn_out, txn_cnt )==FD_RUNTIME_EXECUTE_SUCCESS;
   ulong failed_idx = ULONG_MAX;
   if( FD_UNLIKELY( !setup_bundle ) ) {
     for( ulong i=0UL; i<txn_cnt; i++ ) {
@@ -563,13 +581,32 @@ handle_bundle( fd_execle_tile_t *  ctx,
     if( FD_UNLIKELY( !txn_out->err.is_committable || txn_out->err.txn_err!=FD_RUNTIME_EXECUTE_SUCCESS ) ) failed_idx = i;
   }
 
-  /* If all of the transactions in the bundle executed successfully, we
-     can commit the transactions in order.  At this point, we can also
-     accumulate unused CUs to the rebate.  Otherwise, if any transaction
-     fails, we need to exclude all the bundle transactions and rebate
-     all of the CUs. */
+  if( FD_UNLIKELY( commit_first_only & (failed_idx==ULONG_MAX) ) ) {
+    fd_runtime_fini_bundle( ctx->runtime );
+    setup_bundle = 0;
+
+    fd_txn_out_t * txn_out = &ctx->txn_out[ 0 ];
+    txn_out->err.txn_err = FD_RUNTIME_EXECUTE_SUCCESS;
+    int err = fd_runtime_prepare_bundle_accounts( ctx->runtime, bank, ctx->txn_in, ctx->txn_out, 1UL );
+    if( FD_LIKELY( err==FD_RUNTIME_EXECUTE_SUCCESS ) ) {
+      setup_bundle = 1;
+      fd_runtime_prepare_and_execute_txn( ctx->runtime, bank, &ctx->txn_in[ 0 ], txn_out );
+    } else {
+      txn_out->err.is_committable = 0;
+      txn_out->err.txn_err        = err;
+    }
+
+    txns[ 0 ].flags = (txns[ 0 ].flags & 0x00FFFFFFU) | ((uint)(-txn_out->err.txn_err)<<24);
+    if( FD_UNLIKELY( !txn_out->err.is_committable || txn_out->err.txn_err!=FD_RUNTIME_EXECUTE_SUCCESS ) ) failed_idx = 0UL;
+  }
+
+  ulong landed_cnt = fd_ulong_if( failed_idx==ULONG_MAX, fd_ulong_if( commit_first_only, 1UL, txn_cnt ), 0UL );
+
+  /* Commit the first landed_cnt transactions in order and accumulate
+     their unused CUs to the rebate.  Everything past landed_cnt is
+     excluded from the block and fully rebated. */
   if( FD_LIKELY( failed_idx==ULONG_MAX ) ) {
-    for( ulong i=0UL; i<txn_cnt; i++ ) {
+    for( ulong i=0UL; i<landed_cnt; i++ ) {
 
       fd_txn_in_t *  txn_in    = &ctx->txn_in[ i ];
       fd_txn_out_t * txn_out   = &ctx->txn_out[ i ];
@@ -617,11 +654,11 @@ handle_bundle( fd_execle_tile_t *  ctx,
       fd_metrics_tl[ MIDX( COUNTER, EXECLE, TXN_PROCESSED )+FD_METRICS_ENUM_TXN_RESULT_V_SUCCESS_IDX ]++;
       fd_metrics_tl[ MIDX( COUNTER, EXECLE, TXN_PROCESSED_BY_VERSION )+fd_execle_version_from_txn( TXN( &txns[ i ] ) ) ]++;
     }
-  } else {
-    /* A failed bundle is dropped in its entirety: every transaction is
-       marked non-committable and none of them land in the block. We
+  }
+  if( FD_UNLIKELY( landed_cnt<txn_cnt ) ) {
+    /* Non-landing transactions are marked non-committable.  We
        intentionally do NOT emit runtime_txn events here */
-    for( ulong i=0UL; i<txn_cnt; i++ ) {
+    for( ulong i=landed_cnt; i<txn_cnt; i++ ) {
 
       ctx->txn_out[ i ].err.is_committable = 0;
 
@@ -650,7 +687,14 @@ handle_bundle( fd_execle_tile_t *  ctx,
 
   if( FD_LIKELY( setup_bundle ) ) fd_runtime_fini_bundle( ctx->runtime );
 
-  if( FD_LIKELY( ctx->enable_rebates ) ) fd_pack_rebate_sum_add_txn( ctx->rebater, txns, writable_alt, txn_cnt );
+  if( FD_LIKELY( ctx->enable_rebates ) ) {
+    if( FD_UNLIKELY( landed_cnt && landed_cnt<txn_cnt ) ) {
+      fd_pack_rebate_sum_add_txn( ctx->rebater, txns,            writable_alt,            landed_cnt         );
+      fd_pack_rebate_sum_add_txn( ctx->rebater, txns+landed_cnt, writable_alt+landed_cnt, txn_cnt-landed_cnt );
+    } else {
+      fd_pack_rebate_sum_add_txn( ctx->rebater, txns, writable_alt, txn_cnt );
+    }
+  }
 
   for( ulong i=0UL; i<txn_cnt; i++ ) {
     fd_txn_out_t const * txn_out = &ctx->txn_out[ i ];
@@ -663,7 +707,7 @@ handle_bundle( fd_execle_tile_t *  ctx,
 
   /* Indicate to pack tile we are done processing the transactions so
      it can pack new microblocks using these accounts. */
-  fd_fseq_update( ctx->busy_fseq, seq );
+  fd_fseq_update( ctx->busy_fseq, execle_busy_val( seq, txns, txn_cnt ) );
 
   /* We need to publish each transaction separately into its own
      microblock, so make a temporary copy on the stack so we can move
