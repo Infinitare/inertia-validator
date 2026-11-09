@@ -311,6 +311,11 @@ handle_microblock( fd_execle_tile_t *  ctx,
   trailer->txn_ns_dt        = (fd_txn_ns_dt_t){0};
   trailer->bank_seq         = bank->bank_seq;
   trailer->exec_end_ticks   = LONG_MAX;
+  trailer->bundle_idx       = 0U;
+  trailer->bundle_cnt       = 0U;
+  trailer->exec_err_idx     = 0U;
+  trailer->exec_err         = 0;
+  trailer->custom_err       = 0U;
 
   /* exec_start_ticks is the first transaction's load_start_ticks (an
      empty microblock reads the clock itself); microblock_start_ticks
@@ -547,6 +552,8 @@ handle_bundle( fd_execle_tile_t *  ctx,
     ctx->txn_in[ i ].bundle.is_bundle = 1;
     ctx->txn_in[ i ].index_in_slot    = ctx->_txn_idx + i;
     ctx->txn_out[ i ].err.txn_err     = FD_RUNTIME_EXECUTE_SUCCESS;
+    ctx->txn_out[ i ].err.exec_err    = 0;
+    ctx->txn_out[ i ].err.custom_err  = 0U;
   }
 
   int commit_first_only = (txn_cnt>1UL) & !!(txns[ 0 ].flags & FD_TXN_P_FLAGS_COMMIT_FIRST_ONLY);
@@ -730,6 +737,11 @@ handle_bundle( fd_execle_tile_t *  ctx,
     trailer->bank_seq         = bank->bank_seq;
     trailer->exec_start_ticks = bundle_start_ticks;
     trailer->exec_end_ticks   = txn_end_ticks[ i ];
+    trailer->bundle_idx       = (uchar)i;
+    trailer->bundle_cnt       = (uchar)txn_cnt;
+    trailer->exec_err         = (schar)txn_out->err.exec_err;
+    trailer->exec_err_idx     = (uchar)fd_uint_if( txn_out->err.exec_err!=0, txn_out->err.exec_err_idx, 0U );
+    trailer->custom_err       = txn_out->err.custom_err;
 
     ulong execle_sig = fd_disco_execle_sig( slot, ctx->_pack_idx+i );
 

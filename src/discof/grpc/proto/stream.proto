@@ -12,6 +12,7 @@ message SubscribeRequest {
   repeated bytes accounts = 1;
   bool include_votes = 2;
   bool include_failed = 3;
+  bool include_bundles = 4;
 }
 
 message CompiledInstruction {
@@ -30,6 +31,20 @@ message TxnUpdate {
   repeated CompiledInstruction instructions = 7;
 }
 
+message TxnError {
+  int32 error = 1;
+  int32 instruction_error = 2;
+  uint32 instruction = 3;
+  uint32 custom = 4;
+}
+
+message BundleOutcome {
+  uint64 slot = 1;
+  bool landed = 2;
+  repeated bytes signatures = 3;
+  repeated TxnError errors = 4;
+}
+
 message Gap {
   uint64 dropped = 1;
   uint64 slot = 2;
@@ -39,5 +54,6 @@ message Update {
   oneof update {
     TxnUpdate txn = 1;
     Gap gap = 2;
+    BundleOutcome bundle = 3;
   }
 }

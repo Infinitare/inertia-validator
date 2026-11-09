@@ -25,8 +25,9 @@
 
 #define GRPC_STATUS_INVALID_ARGUMENT (3U)
 
-#define UPDATE_FIELD_TXN  (1U)
-#define UPDATE_FIELD_GAP  (2U)
+#define UPDATE_FIELD_TXN    (1U)
+#define UPDATE_FIELD_GAP    (2U)
+#define UPDATE_FIELD_BUNDLE (3U)
 
 #define IN_KIND_REPLAY (0)
 #define IN_KIND_EXECLE (1)
@@ -47,10 +48,26 @@ struct fd_grpc_sub {
   ulong acct_cnt;
   uchar include_votes;
   uchar include_failed;
+  uchar include_bundles;
   uchar accts[ SUB_ACCT_MAX ][ 32 ];
 };
 
 typedef struct fd_grpc_sub fd_grpc_sub_t;
+
+struct fd_grpc_bundle {
+  ulong slot;
+  ulong txn_idx0;
+  ulong cnt;
+  ulong idx;
+  int   landed;
+  uchar sigs        [ MAX_TXN_PER_MICROBLOCK ][ 64 ];
+  int   txn_err     [ MAX_TXN_PER_MICROBLOCK ];
+  schar exec_err    [ MAX_TXN_PER_MICROBLOCK ];
+  uchar exec_err_idx[ MAX_TXN_PER_MICROBLOCK ];
+  uint  custom_err  [ MAX_TXN_PER_MICROBLOCK ];
+};
+
+typedef struct fd_grpc_bundle fd_grpc_bundle_t;
 
 struct fd_grpc_in {
   int         kind;
@@ -60,6 +77,8 @@ struct fd_grpc_in {
   ulong       mtu;
   ulong       next_seq;
   int         seq_valid;
+
+  fd_grpc_bundle_t bundle[ 1 ];
 };
 
 typedef struct fd_grpc_in fd_grpc_in_t;
@@ -79,6 +98,7 @@ struct fd_grpc_tile {
   ulong txn_mask;
   ulong vote_mask;
   ulong failed_mask;
+  ulong bundle_mask;
 
   ulong last_slot;
   ulong txn_oversz;
@@ -209,14 +229,16 @@ index_rebuild( fd_grpc_tile_t * ctx ) {
   ctx->txn_mask    = 0UL;
   ctx->vote_mask   = 0UL;
   ctx->failed_mask = 0UL;
+  ctx->bundle_mask = 0UL;
 
   for( ulong m=ctx->sub_mask; m; m &= m-1UL ) {
     ulong           idx = (ulong)fd_ulong_find_lsb( m );
     fd_grpc_sub_t * sub = &ctx->sub[ idx ];
     ulong           bit = 1UL<<idx;
 
-    if( sub->include_votes  ) ctx->vote_mask   |= bit;
-    if( sub->include_failed ) ctx->failed_mask |= bit;
+    if( sub->include_votes   ) ctx->vote_mask   |= bit;
+    if( sub->include_failed  ) ctx->failed_mask |= bit;
+    if( sub->include_bundles ) ctx->bundle_mask |= bit;
 
     if( sub->acct_cnt ) ctx->txn_mask |= bit;
     for( ulong j=0UL; j<sub->acct_cnt; j++ ) acct_map_insert( ctx, sub->accts[ j ], bit );
@@ -306,6 +328,77 @@ emit_txn( fd_grpc_tile_t *   ctx,
   fd_grpc_server_msg_broadcast( ctx->server, fd_pb_encoder_out_sz( enc ), mask );
 }
 
+static void
+emit_bundle( fd_grpc_tile_t *         ctx,
+             fd_grpc_bundle_t const * bundle ) {
+  ulong mask = ctx->bundle_mask & ctx->sub_mask;
+  if( FD_LIKELY( !mask ) ) return;
+
+  if( FD_UNLIKELY( ctx->gap_cnt ) ) emit_gap( ctx );
+
+  uchar * out = fd_grpc_server_msg_stage( ctx->server, MSG_MAX );
+  if( FD_UNLIKELY( !out ) ) return;
+
+  fd_pb_encoder_t enc[ 1 ];
+  fd_pb_encoder_init( enc, out, MSG_MAX );
+
+  fd_pb_submsg_open( enc, UPDATE_FIELD_BUNDLE );
+  fd_pb_push_uint64( enc, 1U, bundle->slot );
+  fd_pb_push_bool  ( enc, 2U, bundle->landed );
+  for( ulong i=0UL; i<bundle->cnt; i++ ) fd_pb_push_bytes( enc, 3U, bundle->sigs[ i ], 64UL );
+  for( ulong i=0UL; i<bundle->cnt; i++ ) {
+    fd_pb_submsg_open ( enc, 4U );
+    fd_pb_push_int32  ( enc, 1U, bundle->txn_err     [ i ] );
+    fd_pb_push_int32  ( enc, 2U, bundle->exec_err    [ i ] );
+    fd_pb_push_uint32 ( enc, 3U, bundle->exec_err_idx[ i ] );
+    fd_pb_push_uint32 ( enc, 4U, bundle->custom_err  [ i ] );
+    fd_pb_submsg_close( enc );
+  }
+  fd_pb_submsg_close( enc );
+
+  fd_grpc_server_msg_broadcast( ctx->server, fd_pb_encoder_out_sz( enc ), mask );
+}
+
+/* A bundle is published as one microblock per transaction, so the
+   members are collected per input link until the last one arrives. */
+
+static void
+collect_bundle( fd_grpc_tile_t *                ctx,
+                fd_grpc_in_t *                  in,
+                ulong                           slot,
+                fd_txn_p_t const *              txnp,
+                fd_microblock_trailer_t const * trailer ) {
+  fd_grpc_bundle_t * bundle = in->bundle;
+  if( trailer->bundle_idx==0U ) {
+    bundle->slot     = slot;
+    bundle->txn_idx0 = trailer->pack_txn_idx;
+    bundle->cnt      = trailer->bundle_cnt;
+    bundle->idx      = 0UL;
+    bundle->landed   = !!( txnp->flags & FD_TXN_P_FLAGS_EXECUTE_SUCCESS );
+  } else if( FD_UNLIKELY( bundle->idx!=trailer->bundle_idx || bundle->cnt!=trailer->bundle_cnt ||
+                          trailer->pack_txn_idx!=bundle->txn_idx0+bundle->idx ) ) {
+    bundle->cnt = 0UL;
+    return;
+  }
+  if( FD_UNLIKELY( bundle->cnt>MAX_TXN_PER_MICROBLOCK ) ) {
+    bundle->cnt = 0UL;
+    return;
+  }
+
+  ulong i = bundle->idx++;
+  fd_txn_t const * txn = (fd_txn_t const *)txnp->_;
+  memcpy( bundle->sigs[ i ], fd_txn_get_signatures( txn, txnp->payload ), 64UL );
+  bundle->txn_err     [ i ] = -(int)( txnp->flags>>24 );
+  bundle->exec_err    [ i ] = trailer->exec_err;
+  bundle->exec_err_idx[ i ] = trailer->exec_err_idx;
+  bundle->custom_err  [ i ] = trailer->custom_err;
+
+  if( bundle->idx==bundle->cnt ) {
+    emit_bundle( ctx, bundle );
+    bundle->cnt = 0UL;
+  }
+}
+
 static int
 cb_request_start( void *       _ctx,
                   ulong        stream_idx,
@@ -340,9 +433,10 @@ cb_request_msg( void *        _ctx,
   }
 
   fd_grpc_sub_t * sub = &ctx->sub[ stream_idx ];
-  sub->acct_cnt       = 0UL;
-  sub->include_votes  = (uchar)!!req->include_votes;
-  sub->include_failed = (uchar)!!req->include_failed;
+  sub->acct_cnt        = 0UL;
+  sub->include_votes   = (uchar)!!req->include_votes;
+  sub->include_failed  = (uchar)!!req->include_failed;
+  sub->include_bundles = (uchar)!!req->include_bundles;
 
   for( ulong i=0UL; i<req->accounts_count; i++ ) {
     if( FD_UNLIKELY( req->accounts[ i ].size!=32UL ) ) {
@@ -432,6 +526,7 @@ tile_ctx_init( void *                 scratch,
   ctx->txn_mask    = 0UL;
   ctx->vote_mask   = 0UL;
   ctx->failed_mask = 0UL;
+  ctx->bundle_mask = 0UL;
 
   ctx->last_slot  = 0UL;
   ctx->txn_oversz = 0UL;
@@ -476,6 +571,7 @@ unprivileged_init( fd_topo_t const *      topo,
     ctx->in[ i ].mtu       = link->mtu;
     ctx->in[ i ].next_seq  = 0UL;
     ctx->in[ i ].seq_valid = 0;
+    ctx->in[ i ].bundle->cnt = 0UL;
   }
 }
 
@@ -527,8 +623,9 @@ before_frag( fd_grpc_tile_t * ctx,
   }
   in->next_seq = fd_seq_inc( seq, 1UL );
 
-  if( FD_LIKELY( !ctx->txn_mask ) ) return 1;
-  return in->kind==IN_KIND_REPLAY && sig!=REPLAY_SIG_TXN_EXECUTED;
+  if( FD_LIKELY( !ctx->txn_mask && !ctx->bundle_mask ) ) return 1;
+  if( in->kind==IN_KIND_REPLAY ) return sig!=REPLAY_SIG_TXN_EXECUTED || !ctx->txn_mask;
+  return 0;
 }
 
 static void
@@ -567,6 +664,10 @@ after_frag( fd_grpc_tile_t *    ctx,
     case IN_KIND_EXECLE: {
       ctx->last_slot = fd_disco_execle_sig_slot( sig );
       ulong txn_cnt = ( sz-sizeof(fd_microblock_trailer_t) )/sizeof(fd_txn_p_t);
+      fd_microblock_trailer_t const * trailer = (fd_microblock_trailer_t const *)( ctx->buf->raw + sz - sizeof(fd_microblock_trailer_t) );
+      if( ctx->bundle_mask && txn_cnt==1UL && trailer->bundle_cnt ) {
+        collect_bundle( ctx, &ctx->in[ in_idx ], ctx->last_slot, ctx->buf->txns, trailer );
+      }
       for( ulong i=0UL; i<txn_cnt; i++ ) {
         fd_txn_p_t const * txnp = &ctx->buf->txns[ i ];
         if( !( txnp->flags & FD_TXN_P_FLAGS_EXECUTE_SUCCESS ) ) continue;

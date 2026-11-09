@@ -427,6 +427,43 @@ test_build_system_transfer_txn( fd_txn_p_t * out,
 }
 
 static void
+test_build_system_transfer2_txn( fd_txn_p_t * out,
+                                 fd_bank_t *  bank,
+                                 fd_pubkey_t  from,
+                                 fd_pubkey_t  to,
+                                 ulong        lamports0,
+                                 ulong        lamports1 ) {
+  fd_hash_t const * recent_blockhash = fd_blockhashes_peek_last_hash( &bank->f.block_hash_queue );
+  FD_TEST( recent_blockhash );
+
+  fd_txn_builder_t builder[1];
+  FD_TEST( fd_txn_builder_new( builder, 2UL ) );
+  FD_TEST( fd_txn_builder_fee_payer_set( builder, &from ) );
+  fd_txn_builder_blockhash_set( builder, recent_blockhash );
+
+  ulong const lamports[ 2 ] = { lamports0, lamports1 };
+  for( ulong i=0UL; i<2UL; i++ ) {
+    fd_system_program_instruction_t instr = {
+      .discriminant   = FD_SYSTEM_PROGRAM_INSTR_TRANSFER,
+      .inner.transfer = lamports[ i ]
+    };
+    uchar instr_data[ 16 ];
+    ulong instr_data_sz = 0UL;
+    FD_TEST( !fd_system_program_instruction_encode( &instr, instr_data, sizeof(instr_data), &instr_data_sz ) );
+    FD_TEST( fd_txn_builder_instr_open( builder, &fd_solana_system_program_id, instr_data, instr_data_sz ) );
+    FD_TEST( fd_txn_builder_instr_account_push( builder, &from, FD_TXN_ACCT_CAT_WRITABLE | FD_TXN_ACCT_CAT_SIGNER ) );
+    FD_TEST( fd_txn_builder_instr_account_push( builder, &to,   FD_TXN_ACCT_CAT_WRITABLE ) );
+    fd_txn_builder_instr_close( builder );
+  }
+
+  fd_memset( out, 0, sizeof(fd_txn_p_t) );
+  FD_TEST( fd_txn_build_p( builder, out ) );
+  out->pack_cu.non_execution_cus                 = 1000U;
+  out->pack_cu.requested_exec_plus_acct_data_cus = 300000U;
+  fd_txn_builder_delete( builder );
+}
+
+static void
 test_build_missing_program_txn( fd_txn_p_t * out,
                                 fd_bank_t *   bank,
                                 fd_pubkey_t   fee_payer,
@@ -811,6 +848,20 @@ test_assert_txn_ns_dt_ordered( fd_txn_ns_dt_t const * dt ) {
   FD_TEST( dt->exec_start   >= dt->check_start  );
   FD_TEST( dt->commit_start >= dt->exec_start   );
   FD_TEST( dt->commit_end   >= dt->commit_start );
+}
+
+static void
+test_assert_trailer_bundle( fd_microblock_trailer_t const * trailer,
+                            ulong                           bundle_idx,
+                            ulong                           bundle_cnt,
+                            int                             exec_err,
+                            uint                            exec_err_idx,
+                            uint                            custom_err ) {
+  FD_TEST( (ulong)trailer->bundle_idx  ==bundle_idx   );
+  FD_TEST( (ulong)trailer->bundle_cnt  ==bundle_cnt   );
+  FD_TEST( (int)  trailer->exec_err    ==exec_err     );
+  FD_TEST( (uint) trailer->exec_err_idx==exec_err_idx );
+  FD_TEST(        trailer->custom_err  ==custom_err   );
 }
 
 FD_UNIT_TEST( execle_seccomp ) {
@@ -1284,6 +1335,8 @@ FD_UNIT_TEST( execle_simple_error ) {
 
   fd_txn_p_t txn[1];
   test_build_system_transfer_txn( txn, bank, fee_payer, recipient, transfer );
+  uchar * out_mem = fd_chunk_to_laddr( env->execle->out_poh->mem, env->execle->out_poh->chunk );
+  fd_memset( out_mem+sizeof(fd_txn_p_t), 0xFF, sizeof(fd_microblock_trailer_t) );
   test_execle_run( env, txn, 1UL, 5U, 19UL, 0 );
 
   test_assert_nonbundle_out( env, 1UL, 5U );
@@ -1304,6 +1357,7 @@ FD_UNIT_TEST( execle_simple_error ) {
   fd_microblock_trailer_t const * trailer = test_out_poh_trailer_nonbundle( env, 1UL );
   FD_TEST( trailer->pack_txn_idx==19UL );
   FD_TEST( trailer->tips==0UL );
+  test_assert_trailer_bundle( trailer, 0UL, 0UL, 0, 0U, 0U );
   fd_txn_p_t txn_copy = *out_txn;
   uchar expected_hash[32];
   test_compute_expected_hash( &txn_copy, 1UL, expected_hash );
@@ -1414,6 +1468,7 @@ FD_UNIT_TEST( execle_bundle_ok ) {
     fd_microblock_trailer_t const * trailer = test_out_poh_trailer_bundle( env, i );
     FD_TEST( trailer->pack_txn_idx==21UL+i );
     FD_TEST( trailer->tips==0UL );
+    test_assert_trailer_bundle( trailer, i, 2UL, 0, 0U, 0U );
     fd_txn_p_t txn_copy = *out_txn;
     uchar expected_hash[32];
     test_compute_expected_hash( &txn_copy, 1UL, expected_hash );
@@ -1476,6 +1531,9 @@ FD_UNIT_TEST( execle_bundle_fail ) {
     fd_microblock_trailer_t const * trailer = test_out_poh_trailer_bundle( env, i );
     FD_TEST( trailer->pack_txn_idx==31UL+i );
     FD_TEST( trailer->tips==0UL );
+    test_assert_trailer_bundle( trailer, i, 2UL,
+                                i==1UL ? FD_EXECUTOR_INSTR_ERR_CUSTOM_ERR : 0, 0U,
+                                i==1UL ? FD_SYSTEM_PROGRAM_ERR_RESULT_WITH_NEGATIVE_LAMPORTS : 0U );
     /* hash not checked: empty bmtree (no EXECUTE_SUCCESS txns) */
   }
 
@@ -1568,6 +1626,9 @@ FD_UNIT_TEST( execle_bundle_peer_fail ) {
     fd_microblock_trailer_t const * trailer = test_out_poh_trailer_bundle( env, i );
     FD_TEST( trailer->pack_txn_idx==35UL+i );
     FD_TEST( trailer->tips==0UL );
+    test_assert_trailer_bundle( trailer, i, 3UL,
+                                i==1UL ? FD_EXECUTOR_INSTR_ERR_CUSTOM_ERR : 0, 0U,
+                                i==1UL ? FD_SYSTEM_PROGRAM_ERR_RESULT_WITH_NEGATIVE_LAMPORTS : 0U );
     /* hash not checked: empty bmtree (no EXECUTE_SUCCESS txns) */
   }
 
@@ -1674,6 +1735,7 @@ FD_UNIT_TEST( execle_bundle_commit_first_only_ok ) {
     fd_microblock_trailer_t const * trailer = test_out_poh_trailer_bundle( env, 0UL );
     FD_TEST( trailer->pack_txn_idx==41UL );
     FD_TEST( trailer->tips==0UL );
+    test_assert_trailer_bundle( trailer, 0UL, 3UL, 0, 0U, 0U );
     fd_txn_p_t txn_copy = *out_txn0;
     uchar expected_hash[32];
     test_compute_expected_hash( &txn_copy, 1UL, expected_hash );
@@ -1694,6 +1756,7 @@ FD_UNIT_TEST( execle_bundle_commit_first_only_ok ) {
     fd_microblock_trailer_t const * trailer = test_out_poh_trailer_bundle( env, i );
     FD_TEST( trailer->pack_txn_idx==41UL+i );
     FD_TEST( trailer->tips==0UL );
+    test_assert_trailer_bundle( trailer, i, 3UL, 0, 0U, 0U );
     test_assert_txn_ns_dt_ordered( &trailer->txn_ns_dt );
   }
 
@@ -1765,6 +1828,9 @@ FD_UNIT_TEST( execle_bundle_commit_first_only_fail ) {
     FD_TEST( out_txn->execle_cu.actual_consumed_cus==0U );
     FD_TEST( out_txn->execle_cu.rebated_cus==
              txns[i].pack_cu.requested_exec_plus_acct_data_cus + txns[i].pack_cu.non_execution_cus );
+    test_assert_trailer_bundle( test_out_poh_trailer_bundle( env, i ), i, 2UL,
+                                i==1UL ? FD_EXECUTOR_INSTR_ERR_CUSTOM_ERR : 0, 0U,
+                                i==1UL ? FD_SYSTEM_PROGRAM_ERR_RESULT_WITH_NEGATIVE_LAMPORTS : 0U );
   }
 
   fd_txn_p_t const * out_txn0 = fd_chunk_to_laddr( env->execle->out_poh->mem, test_out_poh_meta( 0UL )->chunk );
@@ -1787,6 +1853,46 @@ FD_UNIT_TEST( execle_bundle_commit_first_only_fail ) {
   test_env_destroy( env );
 }
 
+FD_UNIT_TEST( execle_bundle_instr_err_idx ) {
+  test_env_t * env = test_env_create();
+  fd_bank_t * bank = fd_svm_mini_bank( env->mini, env->bank_idx );
+
+  fd_pubkey_t fee_payer  = { .ul = { 0xd1d1UL } };
+  fd_pubkey_t recipient0 = { .ul = { 0xd2d2UL } };
+  fd_pubkey_t recipient1 = { .ul = { 0xd3d3UL } };
+  ulong const payer_start      = 1000000000UL;
+  ulong const recipient0_start = 111UL;
+  ulong const recipient1_start = 222UL;
+
+  test_fund_account( env, &fee_payer,  payer_start );
+  test_fund_account( env, &recipient0, recipient0_start );
+  test_fund_account( env, &recipient1, recipient1_start );
+
+  fd_txn_p_t txns[2];
+  test_build_system_transfer_txn ( &txns[0], bank, fee_payer, recipient0, 1234UL );
+  test_build_system_transfer2_txn( &txns[1], bank, fee_payer, recipient1, 1UL, payer_start );
+  test_execle_run( env, txns, 2UL, 20U, 51UL, 1 );
+
+  test_assert_bundle_out( env, 2UL, 20U );
+  FD_TEST( env->execle->txn_out[1].err.txn_err==FD_RUNTIME_TXN_ERR_INSTRUCTION_ERROR );
+
+  fd_txn_p_t const * out_txn0 = fd_chunk_to_laddr( env->execle->out_poh->mem, test_out_poh_meta( 0UL )->chunk );
+  fd_txn_p_t const * out_txn1 = fd_chunk_to_laddr( env->execle->out_poh->mem, test_out_poh_meta( 1UL )->chunk );
+  FD_TEST( (out_txn0->flags & FD_TXN_P_FLAGS_RESULT_MASK)==((uint)(-FD_RUNTIME_TXN_ERR_BUNDLE_PEER)<<24) );
+  FD_TEST( (out_txn1->flags & FD_TXN_P_FLAGS_RESULT_MASK)==((uint)(-FD_RUNTIME_TXN_ERR_INSTRUCTION_ERROR)<<24) );
+
+  test_assert_trailer_bundle( test_out_poh_trailer_bundle( env, 0UL ), 0UL, 2UL, 0, 0U, 0U );
+  test_assert_trailer_bundle( test_out_poh_trailer_bundle( env, 1UL ), 1UL, 2UL,
+                              FD_EXECUTOR_INSTR_ERR_CUSTOM_ERR, 1U,
+                              FD_SYSTEM_PROGRAM_ERR_RESULT_WITH_NEGATIVE_LAMPORTS );
+
+  FD_TEST( test_read_lamports( env, &fee_payer  )==payer_start      );
+  FD_TEST( test_read_lamports( env, &recipient0 )==recipient0_start );
+  FD_TEST( test_read_lamports( env, &recipient1 )==recipient1_start );
+
+  test_env_destroy( env );
+}
+
 FD_UNIT_TEST( execle_bundle_prepare_failure ) {
   for( ulong failed=0UL; failed<3UL; failed++ ) {
     test_env_t * env = test_env_create();
@@ -1801,6 +1907,9 @@ FD_UNIT_TEST( execle_bundle_prepare_failure ) {
       txns[i].flags |= FD_TXN_P_FLAGS_SANITIZE_SUCCESS | FD_TXN_P_FLAGS_EXECUTE_SUCCESS | FD_TXN_P_FLAGS_RESULT_MASK;
       /* Recycled flags/outputs must not affect member attribution or timing. */
       env->execle->txn_out[i].err.txn_err = FD_RUNTIME_TXN_ERR_INSUFFICIENT_FUNDS_FOR_FEE;
+      env->execle->txn_out[i].err.exec_err     = FD_EXECUTOR_INSTR_ERR_CUSTOM_ERR;
+      env->execle->txn_out[i].err.exec_err_idx = 3U;
+      env->execle->txn_out[i].err.custom_err   = 77U;
       env->execle->txn_out[i].accounts.cnt = 99U;
       env->execle->txn_out[i].details.load_start_ticks   = 100L;
       env->execle->txn_out[i].details.check_start_ticks  = 110L;
@@ -1836,6 +1945,7 @@ FD_UNIT_TEST( execle_bundle_prepare_failure ) {
       FD_TEST( published->execle_cu.rebated_cus==txns[i].pack_cu.requested_exec_plus_acct_data_cus+txns[i].pack_cu.non_execution_cus );
       fd_microblock_trailer_t const * trailer = test_out_poh_trailer_bundle( env, i );
       FD_TEST( trailer->pack_txn_idx==35UL+i && !trailer->tips );
+      test_assert_trailer_bundle( trailer, i, 3UL, 0, 0U, 0U );
       FD_TEST( trailer->txn_ns_dt.load_start==0.f && trailer->txn_ns_dt.check_start==0.f );
       FD_TEST( trailer->txn_ns_dt.exec_start==0.f && trailer->txn_ns_dt.commit_start==0.f && trailer->txn_ns_dt.commit_end==0.f );
       FD_TEST( test_read_lamports( env, &recipients[i] )==100UL+i );
