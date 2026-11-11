@@ -43,8 +43,16 @@ jobs:
                       /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
           df -h /
 
+      # Hosted runners occasionally fail to resolve the apt mirror for a
+      # few seconds; retry instead of failing the whole job on it.
       - name: Install system packages
-        run: ./deps.sh check
+        run: |
+          for attempt in 1 2 3 4 5; do
+            ./deps.sh check && exit 0
+            echo "deps.sh check failed (attempt $attempt), retrying in 20s" >&2
+            sleep 20
+          done
+          exit 1
 
       # `make check` runs the compiler with -fsyntax-only over every
       # translation unit.  No linking, no test binaries: the cheapest
@@ -69,8 +77,16 @@ jobs:
                       /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
           df -h /
 
+      # Hosted runners occasionally fail to resolve the apt mirror for a
+      # few seconds; retry instead of failing the whole job on it.
       - name: Install system packages
-        run: ./deps.sh check
+        run: |
+          for attempt in 1 2 3 4 5; do
+            ./deps.sh check && exit 0
+            echo "deps.sh check failed (attempt $attempt), retrying in 20s" >&2
+            sleep 20
+          done
+          exit 1
 
       - name: Build binaries, libraries and unit tests
         run: make -j "$(nproc)" all
