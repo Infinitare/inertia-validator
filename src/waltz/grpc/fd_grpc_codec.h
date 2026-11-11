@@ -76,7 +76,36 @@ struct fd_grpc_resp_hdrs {
 
 typedef struct fd_grpc_resp_hdrs fd_grpc_resp_hdrs_t;
 
+/* FD_GRPC_PATH_MAX bounds the ':path' of an incoming request.  gRPC
+   paths are '/package.Service/Method'. */
+
+#define FD_GRPC_PATH_MAX 128UL
+
+/* fd_grpc_req_hdrs_rx_t holds the headers of an incoming gRPC request
+   that a server needs in order to route it. */
+
+struct fd_grpc_req_hdrs_rx {
+  char  path[ FD_GRPC_PATH_MAX ]; /* cstr */
+  ulong path_len;
+  uint  is_post       : 1;
+  uint  is_grpc_proto : 1;
+  uint  path_oversz   : 1; /* ':path' exceeded FD_GRPC_PATH_MAX */
+};
+
+typedef struct fd_grpc_req_hdrs_rx fd_grpc_req_hdrs_rx_t;
+
 FD_PROTOTYPES_BEGIN
+
+/* fd_grpc_msg_hdr_encode writes the 5 byte Length-Prefixed-Message
+   header preceding a gRPC message body of msg_sz bytes. */
+
+static inline void
+fd_grpc_msg_hdr_encode( uchar out[5],
+                        ulong msg_sz ) {
+  out[0] = 0; /* not compressed */
+  uint msg_sz_be = fd_uint_bswap( (uint)msg_sz );
+  fd_memcpy( out+1, &msg_sz_be, 4UL );
+}
 
 /* fd_grpc_h2_gen_request_hdrs generates a HEADERS frame with gRPC
    request headers.  Returns 1 on success and 0 on failure */
@@ -97,6 +126,21 @@ fd_grpc_h2_read_response_hdrs( fd_grpc_resp_hdrs_t *       resp,
                                fd_h2_hdr_matcher_t const * matcher,
                                uchar const *               payload,
                                ulong                       payload_sz );
+
+int
+fd_grpc_h2_read_request_hdrs( fd_grpc_req_hdrs_rx_t *     req,
+                              fd_h2_hdr_matcher_t const * matcher,
+                              uchar const *               payload,
+                              ulong                       payload_sz );
+
+int
+fd_grpc_h2_gen_response_hdrs( fd_h2_rbuf_t * rbuf_tx );
+
+int
+fd_grpc_h2_gen_response_trailers( fd_h2_rbuf_t * rbuf_tx,
+                                  uint           grpc_status,
+                                  char const *   grpc_msg,
+                                  ulong          grpc_msg_len );
 
 char const *
 fd_grpc_status_cstr( uint status );

@@ -79,8 +79,7 @@ pktgen_topo( config_t * config ) {
   }
 
 
-  if( FD_UNLIKELY( is_auto_affinity ) ) fd_topob_auto_layout( topo, 0 );
-  topo->agave_affinity_cnt = 0;
+  if( FD_UNLIKELY( is_auto_affinity ) ) fd_topob_auto_layout( topo );
   fd_topob_waker( topo );
   fd_topob_finish( topo, CALLBACKS );
   fd_topo_print_log( /* stdout */ 1, topo );

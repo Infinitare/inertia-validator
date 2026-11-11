@@ -357,6 +357,44 @@ fd_grpc_client_tls_flush( fd_grpc_client_t * client,
   return rc<0 ? -1 : rc;
 }
 
+static int
+fd_grpc_client_tls_tx1( fd_grpc_client_t * client,
+                        fd_tlsrec_conn_t * tls_conn,
+                        int                sock_fd,
+                        int *              charge_busy ) {
+  fd_tlsrec_sock_t * sock = client->tls_sock;
+  ulong tx_used = fd_h2_rbuf_used_sz( client->frame_tx );
+  if( FD_UNLIKELY( !tx_used || fd_tlsrec_sock_tx_pending( sock ) ) ) return 0;
+
+  uchar plaintext[ FD_TLSREC_PLAINTEXT_MAX ];
+  ulong pop_sz = fd_ulong_min( tx_used, sizeof(plaintext) );
+  fd_h2_rbuf_pop_copy( client->frame_tx, plaintext, pop_sz );
+
+  ulong consumed;
+  int tx_err = fd_tlsrec_sock_tx( sock, tls_conn, sock_fd, plaintext, pop_sz, &consumed );
+  if( FD_UNLIKELY( tx_err ) ) {
+    FD_LOG_WARNING(( "fd_tlsrec_sock_tx failed: %s", fd_tlsrec_sock_strerror( tx_err ) ));
+    return -1;
+  }
+  FD_CHECK_CRIT( consumed==pop_sz, "mismatched buffer sizes" );
+
+  client->metrics->stream_chunks_tx_bytes += pop_sz;
+  *charge_busy = 1;
+  return 0;
+}
+
+int
+fd_grpc_client_tls_tx( fd_grpc_client_t * client,
+                       fd_tlsrec_conn_t * tls_conn,
+                       int                sock_fd ) {
+  if( FD_UNLIKELY( fd_tlsrec_sock_flush( client->tls_sock, sock_fd )<0 ) ) return -1;
+  if( FD_LIKELY( fd_tlsrec_conn_is_ready( tls_conn ) ) ) {
+    int busy = 0;
+    if( FD_UNLIKELY( fd_grpc_client_tls_tx1( client, tls_conn, sock_fd, &busy ) ) ) return -1;
+  }
+  return fd_tlsrec_sock_tx_pending( client->tls_sock );
+}
+
 int
 fd_grpc_client_rxtx_socket( fd_grpc_client_t * client,
                             int                sock_fd,
@@ -478,24 +516,7 @@ fd_grpc_client_rxtx_tls( fd_grpc_client_t * client,
   fd_grpc_client_service_streams( client, now );
 
   /* HTTP/2 bytes wait behind parked ciphertext until EPOLLOUT */
-  ulong tx_used = fd_h2_rbuf_used_sz( client->frame_tx );
-  if( FD_LIKELY( tx_used && !fd_tlsrec_sock_tx_pending( sock ) ) ) {
-    uchar plaintext[ FD_TLSREC_PLAINTEXT_MAX ];
-    ulong pop_sz = fd_ulong_min( tx_used, sizeof(plaintext) );
-    fd_h2_rbuf_pop_copy( client->frame_tx, plaintext, pop_sz );
-
-    ulong consumed;
-    int tx_err = fd_tlsrec_sock_tx( sock, tls_conn, sock_fd, plaintext, pop_sz, &consumed );
-    if( FD_UNLIKELY( tx_err ) ) {
-      FD_LOG_WARNING(( "fd_tlsrec_sock_tx failed: %s", fd_tlsrec_sock_strerror( tx_err ) ));
-      return -1;
-    }
-    FD_CHECK_CRIT( consumed==pop_sz, "mismatched buffer sizes" );
-
-    client->metrics->stream_chunks_tx_bytes += pop_sz;
-    *charge_busy = 1;
-  }
-  return 0;
+  return fd_grpc_client_tls_tx1( client, tls_conn, sock_fd, charge_busy );
 }
 
 #endif /* FD_H2_HAS_SOCKETS */

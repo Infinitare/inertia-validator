@@ -242,7 +242,7 @@ firedancer_dev_test_run( int     argc,
       fd_log_thread_set( "supervisor" );
 
       static config_t config[1];
-      fd_config_load( 1, 1, (char const *)firedancer_default_config, firedancer_default_config_sz, NULL, NULL, 0UL, NULL, 0UL, NULL, config, 1 /* dev */ );
+      fd_config_load( 1, (char const *)firedancer_default_config, firedancer_default_config_sz, NULL, NULL, 0UL, NULL, 0UL, NULL, config, 1 /* dev */ );
 
       FD_TEST( config->firedancer.development.genesis.max_file_size_mib==16UL );
 
@@ -267,7 +267,6 @@ firedancer_dev_test_run( int     argc,
       FD_TEST( config->topo.tiles[ replay_idx ].replay.genesis_max_message_size==genesis_max_message_size );
 
       config->log.log_fd = fd_log_private_logfile_fd();
-      config->frankendancer.consensus.poh_speed_test = 0;
 
       return run( config );
     } else {
@@ -295,7 +294,7 @@ firedancer_dev_test_run( int     argc,
       NULL
     };
 
-    return fd_dev_main( argc, argv, 1, configs, fd_topo_initialize );
+    return fd_dev_main( argc, argv, configs, fd_topo_initialize );
   }
 
   return 0;
@@ -323,7 +322,7 @@ run_dev_main( char const * const * argv,
     for( int i=0; i<argc; i++ ) mut_argv[ i ] = (char *)argv[ i ];
     mut_argv[ argc ] = NULL;
 
-    int ret = fd_dev_main( argc, mut_argv, 1, configs, fd_topo_initialize );
+    int ret = fd_dev_main( argc, mut_argv, configs, fd_topo_initialize );
     fd_sys_util_exit_group( ret );
   }
 
@@ -399,7 +398,7 @@ main( int     argc,
   if( argc==2 && !strcmp( argv[ 1 ], "--topology-only" ) ) {
     fd_boot( &argc, &argv );
     static config_t config[ 1 ];
-    fd_config_load( 1, 1, (char const *)firedancer_default_config, firedancer_default_config_sz, NULL, NULL, 0UL, NULL, 0UL, NULL, config, 1 /* dev */ );
+    fd_config_load( 1, (char const *)firedancer_default_config, firedancer_default_config_sz, NULL, NULL, 0UL, NULL, 0UL, NULL, config, 1 /* dev */ );
     fd_topo_initialize( config );
     test_efficient_layout( config );
     fd_halt();
