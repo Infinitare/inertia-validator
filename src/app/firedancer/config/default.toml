@@ -1984,7 +1984,8 @@ telemetry = true
     [tiles.grpc]
         # If the gRPC streaming server is enabled.  It serves the
         # inertia.v1.Stream service, which lets clients subscribe to
-        # slot updates and to transactions touching a set of accounts.
+        # transactions touching a set of accounts, or to every
+        # transaction in this validator's leader slots.
         enabled = true
 
         # The address to listen on.  The server speaks plaintext HTTP/2

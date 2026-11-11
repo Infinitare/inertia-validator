@@ -1681,6 +1681,7 @@ deliberate exception with lint-allow="<rule id>")
 
 <tile name="grpc" telemetry="false">
     <gauge name="SubscriptionCount" summary="Active subscriptions to the gRPC streaming server" />
+    <gauge name="LeaderSubscriptionCount" summary="Active subscriptions to every transaction in this validator's leader slots" />
     <counter name="ConnAccepted" summary="Connections accepted by the gRPC streaming server" />
     <counter name="ConnRejected" summary="Connections rejected because the connection limit was reached" />
     <counter name="ConnErr" summary="Times accepting a connection failed" lint-allow="action kind" />
@@ -1691,9 +1692,9 @@ deliberate exception with lint-allow="<rule id>")
     <counter name="MsgQueued" summary="Updates queued to a subscriber, summed over subscribers" />
     <counter name="MsgDropped" summary="Updates that could not be encoded because the send buffer was too small" />
     <counter name="MsgAbandoned" summary="Updates that were staged but never broadcast" />
-    <counter name="TxnOversz" summary="Matching transactions not sent because their encoding exceeded the message size limit" lint-allow="action kind" />
     <counter name="BytesTx" summary="Data written to all subscribers" />
-    <counter name="FragsDropped" summary="Replay frags missed because the tile fell behind, reported to subscribers as gaps" lint-allow="plural" />
+    <counter name="FragsDropped" summary="Input frags missed because the tile fell behind, reported to subscribers as gaps unless they came from pack" lint-allow="plural" />
+    <counter name="AltMiss" summary="Leader transactions sent without their lookup table accounts because pack's copy was missed" />
 </tile>
 
 <enum name="SoftirqType">

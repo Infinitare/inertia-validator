@@ -88,7 +88,6 @@ main( int     argc,
       FD_LOG_NOTICE(( "fixture %lu rejected by fd_txn_parse, skipping", i+1UL ));
       continue;
     }
-    /* Alternate success and failure so include_failed is exercised. */
     execs[ txn_cnt ].txn_err = ( txn_cnt & 1UL ) ? FD_RUNTIME_TXN_ERR_ACCOUNT_LOADED_TWICE : 0;
     txn_cnt++;
   }
@@ -113,7 +112,7 @@ main( int     argc,
     if( seq%32UL==0UL ) ctx->last_slot++;
 
     fd_replay_txn_executed_t * exec = &execs[ seq%txn_cnt ];
-    emit_txn( ctx, ctx->last_slot, exec->txn, exec->txn_err );
+    emit_txn( ctx, ctx->last_slot, seq, exec->txn, exec->txn_err, NULL, 0UL, ctx->leader_mask );
     seq++;
   }
 

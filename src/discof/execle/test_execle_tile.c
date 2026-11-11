@@ -859,9 +859,9 @@ test_assert_trailer_bundle( fd_microblock_trailer_t const * trailer,
                             uint                            custom_err ) {
   FD_TEST( (ulong)trailer->bundle_idx  ==bundle_idx   );
   FD_TEST( (ulong)trailer->bundle_cnt  ==bundle_cnt   );
-  FD_TEST( (int)  trailer->exec_err    ==exec_err     );
-  FD_TEST( (uint) trailer->exec_err_idx==exec_err_idx );
-  FD_TEST(        trailer->custom_err  ==custom_err   );
+  FD_TEST( (int)  trailer->exec_err    [ 0 ]==exec_err     );
+  FD_TEST( (uint) trailer->exec_err_idx[ 0 ]==exec_err_idx );
+  FD_TEST(        trailer->custom_err  [ 0 ]==custom_err   );
 }
 
 FD_UNIT_TEST( execle_seccomp ) {
@@ -1357,7 +1357,8 @@ FD_UNIT_TEST( execle_simple_error ) {
   fd_microblock_trailer_t const * trailer = test_out_poh_trailer_nonbundle( env, 1UL );
   FD_TEST( trailer->pack_txn_idx==19UL );
   FD_TEST( trailer->tips==0UL );
-  test_assert_trailer_bundle( trailer, 0UL, 0UL, 0, 0U, 0U );
+  test_assert_trailer_bundle( trailer, 0UL, 0UL, FD_EXECUTOR_INSTR_ERR_CUSTOM_ERR, 0U,
+                              FD_SYSTEM_PROGRAM_ERR_RESULT_WITH_NEGATIVE_LAMPORTS );
   fd_txn_p_t txn_copy = *out_txn;
   uchar expected_hash[32];
   test_compute_expected_hash( &txn_copy, 1UL, expected_hash );
@@ -1366,6 +1367,50 @@ FD_UNIT_TEST( execle_simple_error ) {
 
   FD_TEST( fd_metrics_tl[ MIDX( COUNTER, EXECLE, TXN_PROCESSED_BY_LANDING )+FD_METRICS_ENUM_TXN_LANDING_RESULT_V_FAILED_IDX ]==1UL );
   FD_TEST( fd_metrics_tl[ MIDX( COUNTER, EXECLE, TXN_PROCESSED )+FD_METRICS_ENUM_TXN_RESULT_V_INSTRUCTION_ERROR_IDX ]==1UL );
+
+  test_env_destroy( env );
+}
+
+FD_UNIT_TEST( execle_simple_error_per_txn ) {
+  test_env_t * env = test_env_create();
+  fd_bank_t * bank = fd_svm_mini_bank( env->mini, env->bank_idx );
+
+  fd_pubkey_t payer0     = { .ul = { 0x7171UL } };
+  fd_pubkey_t payer1     = { .ul = { 0x7272UL } };
+  fd_pubkey_t recipient0 = { .ul = { 0x7373UL } };
+  fd_pubkey_t recipient1 = { .ul = { 0x7474UL } };
+  ulong const payer_start = 1000000000UL;
+
+  test_fund_account( env, &payer0,     payer_start );
+  test_fund_account( env, &payer1,     payer_start );
+  test_fund_account( env, &recipient0, 111UL       );
+  test_fund_account( env, &recipient1, 222UL       );
+
+  fd_txn_p_t txns[2];
+  test_build_system_transfer_txn ( &txns[0], bank, payer0, recipient0, 1234UL );
+  test_build_system_transfer2_txn( &txns[1], bank, payer1, recipient1, 1UL, payer_start );
+  uchar * out_mem = fd_chunk_to_laddr( env->execle->out_poh->mem, env->execle->out_poh->chunk );
+  fd_memset( out_mem+2UL*sizeof(fd_txn_p_t), 0xFF, sizeof(fd_microblock_trailer_t) );
+  test_execle_run( env, txns, 2UL, 6U, 23UL, 0 );
+
+  test_assert_nonbundle_out( env, 2UL, 6U );
+  FD_TEST( env->execle->txn_out[0].err.txn_err==FD_RUNTIME_TXN_ERR_INSTRUCTION_ERROR );
+
+  fd_txn_p_t const * out_txns = fd_chunk_to_laddr( env->execle->out_poh->mem, test_out_poh_meta( 0UL )->chunk );
+  FD_TEST( out_txns[0].flags & FD_TXN_P_FLAGS_EXECUTE_SUCCESS );
+  FD_TEST( out_txns[1].flags & FD_TXN_P_FLAGS_EXECUTE_SUCCESS );
+  FD_TEST( !(out_txns[0].flags & FD_TXN_P_FLAGS_RESULT_MASK) );
+  FD_TEST( (out_txns[1].flags & FD_TXN_P_FLAGS_RESULT_MASK)==((uint)(-FD_RUNTIME_TXN_ERR_INSTRUCTION_ERROR)<<24) );
+
+  fd_microblock_trailer_t const * trailer = test_out_poh_trailer_nonbundle( env, 2UL );
+  FD_TEST( trailer->pack_txn_idx==23UL );
+  FD_TEST( trailer->bundle_cnt==0U );
+  FD_TEST( trailer->exec_err    [ 0 ]==0  );
+  FD_TEST( trailer->exec_err_idx[ 0 ]==0U );
+  FD_TEST( trailer->custom_err  [ 0 ]==0U );
+  FD_TEST( trailer->exec_err    [ 1 ]==FD_EXECUTOR_INSTR_ERR_CUSTOM_ERR );
+  FD_TEST( trailer->exec_err_idx[ 1 ]==1U );
+  FD_TEST( trailer->custom_err  [ 1 ]==FD_SYSTEM_PROGRAM_ERR_RESULT_WITH_NEGATIVE_LAMPORTS );
 
   test_env_destroy( env );
 }

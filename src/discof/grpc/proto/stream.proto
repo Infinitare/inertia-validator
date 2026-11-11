@@ -4,38 +4,33 @@ package inertia.v1;
 
 service Stream {
   rpc Subscribe(SubscribeRequest) returns (stream Update);
+  rpc SubscribeLeader(SubscribeLeaderRequest) returns (stream Update);
 }
 
 message SubscribeRequest {
   // 32-byte pubkeys. A transaction matches if any of its account keys
   // appear here. Empty means no transactions.
   repeated bytes accounts = 1;
-  bool include_votes = 2;
-  bool include_failed = 3;
-  bool include_bundles = 4;
 }
 
-message CompiledInstruction {
-  uint32 program_id_index = 1;
-  bytes accounts = 2;
-  bytes data = 3;
-}
-
-message TxnUpdate {
-  uint64 slot = 1;
-  bytes signature = 2;
-  bool success = 3;
-  int32 err = 4;
-  bool is_vote = 5;
-  repeated bytes account_keys = 6;
-  repeated CompiledInstruction instructions = 7;
-}
+message SubscribeLeaderRequest {}
 
 message TxnError {
   int32 error = 1;
   int32 instruction_error = 2;
   uint32 instruction = 3;
   uint32 custom = 4;
+}
+
+message TxnUpdate {
+  uint64 slot = 1;
+  bytes signature = 2;
+  bool success = 3;
+  uint64 index = 4;
+  bytes payload = 5;
+  repeated bytes loaded_writable = 6;
+  repeated bytes loaded_readonly = 7;
+  TxnError error = 8;
 }
 
 message BundleOutcome {

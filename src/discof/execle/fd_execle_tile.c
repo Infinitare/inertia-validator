@@ -313,9 +313,6 @@ handle_microblock( fd_execle_tile_t *  ctx,
   trailer->exec_end_ticks   = LONG_MAX;
   trailer->bundle_idx       = 0U;
   trailer->bundle_cnt       = 0U;
-  trailer->exec_err_idx     = 0U;
-  trailer->exec_err         = 0;
-  trailer->custom_err       = 0U;
 
   /* exec_start_ticks is the first transaction's load_start_ticks (an
      empty microblock reads the clock itself); microblock_start_ticks
@@ -353,6 +350,10 @@ handle_microblock( fd_execle_tile_t *  ctx,
 
     /* Stash the result in the flags value so that pack can inspect it. */
     txn->flags = (txn->flags & 0x00FFFFFFU) | ((uint)(-txn_out->err.txn_err)<<24);
+
+    trailer->exec_err    [ i ] = (schar)txn_out->err.exec_err;
+    trailer->exec_err_idx[ i ] = (uchar)fd_uint_if( txn_out->err.exec_err!=0, txn_out->err.exec_err_idx, 0U );
+    trailer->custom_err  [ i ] = txn_out->err.custom_err;
 
     /* Drop no-op transactions, we don't want to include these as they
        charge no fees. */
@@ -739,9 +740,9 @@ handle_bundle( fd_execle_tile_t *  ctx,
     trailer->exec_end_ticks   = txn_end_ticks[ i ];
     trailer->bundle_idx       = (uchar)i;
     trailer->bundle_cnt       = (uchar)txn_cnt;
-    trailer->exec_err         = (schar)txn_out->err.exec_err;
-    trailer->exec_err_idx     = (uchar)fd_uint_if( txn_out->err.exec_err!=0, txn_out->err.exec_err_idx, 0U );
-    trailer->custom_err       = txn_out->err.custom_err;
+    trailer->exec_err    [ 0 ] = (schar)txn_out->err.exec_err;
+    trailer->exec_err_idx[ 0 ] = (uchar)fd_uint_if( txn_out->err.exec_err!=0, txn_out->err.exec_err_idx, 0U );
+    trailer->custom_err  [ 0 ] = txn_out->err.custom_err;
 
     ulong execle_sig = fd_disco_execle_sig( slot, ctx->_pack_idx+i );
 

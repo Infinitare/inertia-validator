@@ -2078,6 +2078,7 @@
 | Metric | Type | Description |
 |--------|------|-------------|
 | <span class="metrics-name">grpc_&#8203;subscription_&#8203;count</span> | gauge | Active subscriptions to the gRPC streaming server |
+| <span class="metrics-name">grpc_&#8203;leader_&#8203;subscription_&#8203;count</span> | gauge | Active subscriptions to every transaction in this validator's leader slots |
 | <span class="metrics-name">grpc_&#8203;conn_&#8203;accepted</span> | counter | Connections accepted by the gRPC streaming server |
 | <span class="metrics-name">grpc_&#8203;conn_&#8203;rejected</span> | counter | Connections rejected because the connection limit was reached |
 | <span class="metrics-name">grpc_&#8203;conn_&#8203;err</span> | counter | Times accepting a connection failed |
@@ -2088,9 +2089,9 @@
 | <span class="metrics-name">grpc_&#8203;msg_&#8203;queued</span> | counter | Updates queued to a subscriber, summed over subscribers |
 | <span class="metrics-name">grpc_&#8203;msg_&#8203;dropped</span> | counter | Updates that could not be encoded because the send buffer was too small |
 | <span class="metrics-name">grpc_&#8203;msg_&#8203;abandoned</span> | counter | Updates that were staged but never broadcast |
-| <span class="metrics-name">grpc_&#8203;txn_&#8203;oversz</span> | counter | Matching transactions not sent because their encoding exceeded the message size limit |
 | <span class="metrics-name">grpc_&#8203;bytes_&#8203;tx</span> | counter | Data written to all subscribers |
-| <span class="metrics-name">grpc_&#8203;frags_&#8203;dropped</span> | counter | Replay frags missed because the tile fell behind, reported to subscribers as gaps |
+| <span class="metrics-name">grpc_&#8203;frags_&#8203;dropped</span> | counter | Input frags missed because the tile fell behind, reported to subscribers as gaps unless they came from pack |
+| <span class="metrics-name">grpc_&#8203;alt_&#8203;miss</span> | counter | Leader transactions sent without their lookup table accounts because pack's copy was missed |
 
 </div>
 

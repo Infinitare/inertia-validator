@@ -9,4 +9,7 @@
 PB_BIND(inertia_v1_SubscribeRequest, inertia_v1_SubscribeRequest, 4)
 
 
+PB_BIND(inertia_v1_SubscribeLeaderRequest, inertia_v1_SubscribeLeaderRequest, AUTO)
+
+
 

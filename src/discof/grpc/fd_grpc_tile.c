@@ -17,7 +17,8 @@
 
 #include "generated/fd_grpc_tile_seccomp.h"
 
-#define SUBSCRIBE_PATH "/inertia.v1.Stream/Subscribe"
+#define SUBSCRIBE_PATH        "/inertia.v1.Stream/Subscribe"
+#define SUBSCRIBE_LEADER_PATH "/inertia.v1.Stream/SubscribeLeader"
 
 #define SUB_ACCT_MAX (256UL)
 
@@ -31,10 +32,16 @@
 
 #define IN_KIND_REPLAY (0)
 #define IN_KIND_EXECLE (1)
+#define IN_KIND_PACK   (2)
 
 #define BLOOM_BITS  (1UL<<18)
 #define BLOOM_WORDS (BLOOM_BITS>>6)
 #define BLOOM_MASK  (BLOOM_BITS-1UL)
+
+#define ALT_CACHE_CNT  (1024UL)
+#define ALT_CACHE_MASK (ALT_CACHE_CNT-1UL)
+
+FD_STATIC_ASSERT( 256UL+FD_TPU_MTU+FD_TXN_ACCT_ADDR_MAX*(10UL+FD_TXN_ACCT_ADDR_SZ)<=MSG_MAX, grpc_msg_max );
 
 struct __attribute__((aligned(64))) fd_grpc_acct_entry {
   uchar key[ 32 ];
@@ -46,13 +53,18 @@ typedef struct fd_grpc_acct_entry fd_grpc_acct_entry_t;
 
 struct fd_grpc_sub {
   ulong acct_cnt;
-  uchar include_votes;
-  uchar include_failed;
-  uchar include_bundles;
   uchar accts[ SUB_ACCT_MAX ][ 32 ];
 };
 
 typedef struct fd_grpc_sub fd_grpc_sub_t;
+
+struct fd_grpc_alt {
+  ulong          pack_txn_idx;
+  ulong          cnt;
+  fd_acct_addr_t accts[ FD_TXN_ACCT_ADDR_MAX ];
+};
+
+typedef struct fd_grpc_alt fd_grpc_alt_t;
 
 struct fd_grpc_bundle {
   ulong slot;
@@ -94,16 +106,20 @@ struct fd_grpc_tile {
   ulong *                bloom;
   ulong                  max_sub;
 
+  fd_grpc_alt_t * alt;
+  ulong           alt_pending_cnt;
+  ulong           alt_pending[ MAX_TXN_PER_MICROBLOCK ];
+
   ulong sub_mask;
   ulong txn_mask;
-  ulong vote_mask;
-  ulong failed_mask;
-  ulong bundle_mask;
+  ulong leader_mask;
+  ulong leader_path_mask;
 
   ulong last_slot;
-  ulong txn_oversz;
   ulong gap_cnt;
+  ulong leader_gap_cnt;
   ulong gap_total;
+  ulong alt_miss;
 
   long next_poll_deadline;
   long poll_interval_ticks;
@@ -147,6 +163,7 @@ scratch_align( void ) {
   a = fd_ulong_max( a, fd_grpc_server_align()          );
   a = fd_ulong_max( a, alignof( fd_grpc_sub_t )        );
   a = fd_ulong_max( a, alignof( fd_grpc_acct_entry_t ) );
+  a = fd_ulong_max( a, alignof( fd_grpc_alt_t )        );
   return a;
 }
 
@@ -162,6 +179,7 @@ scratch_footprint( fd_topo_tile_t const * tile ) {
   l = FD_LAYOUT_APPEND( l, alignof( fd_grpc_sub_t ),         tile->grpc.max_subscriptions*sizeof( fd_grpc_sub_t )  );
   l = FD_LAYOUT_APPEND( l, alignof( fd_grpc_acct_entry_t ),  acct_map_cnt( tile )*sizeof( fd_grpc_acct_entry_t )   );
   l = FD_LAYOUT_APPEND( l, 64UL,                             BLOOM_WORDS*sizeof( ulong )                           );
+  l = FD_LAYOUT_APPEND( l, alignof( fd_grpc_alt_t ),         ALT_CACHE_CNT*sizeof( fd_grpc_alt_t )                 );
   return FD_LAYOUT_FINI( l, scratch_align() );
 }
 
@@ -226,19 +244,12 @@ index_rebuild( fd_grpc_tile_t * ctx ) {
   }
   memset( ctx->bloom, 0, BLOOM_WORDS*sizeof(ulong) );
 
-  ctx->txn_mask    = 0UL;
-  ctx->vote_mask   = 0UL;
-  ctx->failed_mask = 0UL;
-  ctx->bundle_mask = 0UL;
+  ctx->txn_mask = 0UL;
 
   for( ulong m=ctx->sub_mask; m; m &= m-1UL ) {
     ulong           idx = (ulong)fd_ulong_find_lsb( m );
     fd_grpc_sub_t * sub = &ctx->sub[ idx ];
     ulong           bit = 1UL<<idx;
-
-    if( sub->include_votes   ) ctx->vote_mask   |= bit;
-    if( sub->include_failed  ) ctx->failed_mask |= bit;
-    if( sub->include_bundles ) ctx->bundle_mask |= bit;
 
     if( sub->acct_cnt ) ctx->txn_mask |= bit;
     for( ulong j=0UL; j<sub->acct_cnt; j++ ) acct_map_insert( ctx, sub->accts[ j ], bit );
@@ -246,7 +257,50 @@ index_rebuild( fd_grpc_tile_t * ctx ) {
 }
 
 static void
-emit_gap( fd_grpc_tile_t * ctx ) {
+alt_stage( fd_grpc_tile_t * ctx,
+           uchar const *    src,
+           ulong            sz ) {
+  fd_microblock_execle_trailer_t const * trailer = (fd_microblock_execle_trailer_t const *)( src+sz-sizeof(fd_microblock_execle_trailer_t) );
+  ulong txn_cnt = fd_ulong_min( ( sz-sizeof(fd_microblock_execle_trailer_t) )/sizeof(fd_txn_e_t), MAX_TXN_PER_MICROBLOCK );
+  ulong idx0    = trailer->pack_txn_idx;
+
+  ctx->alt_pending_cnt = 0UL;
+  for( ulong i=0UL; i<txn_cnt; i++ ) {
+    fd_txn_e_t const * txne = (fd_txn_e_t const *)src + i;
+    ulong cnt = fd_ulong_min( ( (fd_txn_t const *)txne->txnp->_ )->addr_table_adtl_cnt, FD_TXN_ACCT_ADDR_MAX );
+    if( !cnt ) continue;
+
+    fd_grpc_alt_t * e = &ctx->alt[ ( idx0+i ) & ALT_CACHE_MASK ];
+    e->pack_txn_idx = ULONG_MAX;
+    e->cnt          = cnt;
+    memcpy( e->accts, txne->alt_accts, cnt*sizeof(fd_acct_addr_t) );
+    ctx->alt_pending[ ctx->alt_pending_cnt++ ] = idx0+i;
+  }
+}
+
+static void
+alt_commit( fd_grpc_tile_t * ctx ) {
+  for( ulong i=0UL; i<ctx->alt_pending_cnt; i++ ) {
+    ulong idx = ctx->alt_pending[ i ];
+    ctx->alt[ idx & ALT_CACHE_MASK ].pack_txn_idx = idx;
+  }
+  ctx->alt_pending_cnt = 0UL;
+}
+
+static fd_acct_addr_t const *
+alt_query( fd_grpc_tile_t * ctx,
+           ulong            pack_txn_idx,
+           ulong            cnt ) {
+  fd_grpc_alt_t const * e = &ctx->alt[ pack_txn_idx & ALT_CACHE_MASK ];
+  if( FD_LIKELY( e->pack_txn_idx==pack_txn_idx && e->cnt==cnt ) ) return e->accts;
+  ctx->alt_miss++;
+  return NULL;
+}
+
+static void
+emit_gap( fd_grpc_tile_t * ctx,
+          ulong *          gap_cnt,
+          ulong            mask ) {
   uchar * out = fd_grpc_server_msg_stage( ctx->server, MSG_MAX );
   if( FD_UNLIKELY( !out ) ) return;
 
@@ -254,51 +308,56 @@ emit_gap( fd_grpc_tile_t * ctx ) {
   fd_pb_encoder_init( enc, out, MSG_MAX );
 
   fd_pb_submsg_open ( enc, UPDATE_FIELD_GAP );
-  fd_pb_push_uint64 ( enc, 1U, ctx->gap_cnt   );
+  fd_pb_push_uint64 ( enc, 1U, *gap_cnt       );
   fd_pb_push_uint64 ( enc, 2U, ctx->last_slot );
   fd_pb_submsg_close( enc );
 
-  fd_grpc_server_msg_broadcast( ctx->server, fd_pb_encoder_out_sz( enc ), ctx->sub_mask );
-  ctx->gap_cnt = 0UL;
+  fd_grpc_server_msg_broadcast( ctx->server, fd_pb_encoder_out_sz( enc ), mask );
+  *gap_cnt = 0UL;
+}
+
+static inline void
+flush_gaps( fd_grpc_tile_t * ctx,
+            ulong            mask ) {
+  if( FD_UNLIKELY( ctx->gap_cnt        && ( mask & ctx->sub_mask    ) ) ) emit_gap( ctx, &ctx->gap_cnt,        ctx->sub_mask    );
+  if( FD_UNLIKELY( ctx->leader_gap_cnt && ( mask & ctx->leader_mask ) ) ) emit_gap( ctx, &ctx->leader_gap_cnt, ctx->leader_mask );
 }
 
 static void
-emit_txn( fd_grpc_tile_t *   ctx,
-          ulong              slot,
-          fd_txn_p_t const * txnp,
-          int                txn_err ) {
-  if( FD_LIKELY( !ctx->txn_mask ) ) return;
+emit_txn( fd_grpc_tile_t *                ctx,
+          ulong                           slot,
+          ulong                           index,
+          fd_txn_p_t const *              txnp,
+          int                             txn_err,
+          fd_microblock_trailer_t const * trailer,
+          ulong                           trailer_idx,
+          ulong                           leader_mask ) {
+  if( FD_LIKELY( !ctx->txn_mask && !leader_mask ) ) return;
 
-  fd_txn_t const *   txn     = (fd_txn_t const *)txnp->_;
-  uchar const *      payload = txnp->payload;
+  fd_txn_t const * txn     = (fd_txn_t const *)txnp->_;
+  uchar const *    payload = txnp->payload;
 
-  ulong acct_cnt  = txn->acct_addr_cnt;
-  ulong instr_cnt = txn->instr_cnt;
-  if( FD_UNLIKELY( acct_cnt>FD_TXN_ACCT_ADDR_MAX || instr_cnt>FD_TXN_INSTR_MAX || txnp->payload_sz>FD_TXN_MTU ) ) return;
-
-  uchar const * accts = (uchar const *)fd_txn_get_acct_addrs( txn, payload );
+  ulong acct_cnt = txn->acct_addr_cnt;
+  if( FD_UNLIKELY( acct_cnt>FD_TXN_ACCT_ADDR_MAX || txnp->payload_sz>FD_TPU_MTU ) ) return;
 
   ulong mask = 0UL;
-  for( ulong i=0UL; i<acct_cnt; i++ ) mask |= acct_map_query( ctx, accts + 32UL*i );
+  if( ctx->txn_mask ) {
+    uchar const * accts = (uchar const *)fd_txn_get_acct_addrs( txn, payload );
+    for( ulong i=0UL; i<acct_cnt; i++ ) mask |= acct_map_query( ctx, accts + 32UL*i );
+    mask &= ctx->sub_mask;
+  }
+  mask |= leader_mask;
   if( FD_LIKELY( !mask ) ) return;
 
-  int is_vote = fd_txn_is_simple_vote_transaction( txn, payload );
-  if( is_vote ) mask &= ctx->vote_mask;
+  fd_acct_addr_t const * loaded     = NULL;
+  ulong                  loaded_cnt = 0UL;
+  if( trailer && txn->addr_table_adtl_cnt ) {
+    loaded = alt_query( ctx, index, txn->addr_table_adtl_cnt );
+    if( loaded ) loaded_cnt = txn->addr_table_adtl_cnt;
+  }
+  ulong loaded_wr = fd_ulong_min( txn->addr_table_adtl_writable_cnt, loaded_cnt );
 
-  int success = ( txn_err==0 );
-  if( !success ) mask &= ctx->failed_mask;
-
-  mask &= ctx->sub_mask;
-  if( FD_UNLIKELY( !mask ) ) return;
-
-  /* Upper bound on the encoding.  fd_pb_encode reserves a worst-case
-     5 byte length prefix for every submessage and bytes field, so this
-     is well above the typical encoded size. */
-
-  ulong bound = 128UL + acct_cnt*38UL + instr_cnt*30UL + txnp->payload_sz + 32UL;
-  if( FD_UNLIKELY( bound>MSG_MAX ) ) { ctx->txn_oversz++; return; }
-
-  if( FD_UNLIKELY( ctx->gap_cnt ) ) emit_gap( ctx );
+  flush_gaps( ctx, mask );
 
   uchar * out = fd_grpc_server_msg_stage( ctx->server, MSG_MAX );
   if( FD_UNLIKELY( !out ) ) return;
@@ -309,18 +368,19 @@ emit_txn( fd_grpc_tile_t *   ctx,
   fd_pb_submsg_open( enc, UPDATE_FIELD_TXN );
   fd_pb_push_uint64( enc, 1U, slot );
   fd_pb_push_bytes ( enc, 2U, fd_txn_get_signatures( txn, payload ), 64UL );
-  fd_pb_push_bool  ( enc, 3U, success );
-  fd_pb_push_int64 ( enc, 4U, (long)txn_err );
-  fd_pb_push_bool  ( enc, 5U, is_vote );
-
-  for( ulong i=0UL; i<acct_cnt; i++ ) fd_pb_push_bytes( enc, 6U, accts + 32UL*i, 32UL );
-
-  for( ulong i=0UL; i<instr_cnt; i++ ) {
-    fd_txn_instr_t const * instr = &txn->instr[ i ];
-    fd_pb_submsg_open( enc, 7U );
-    fd_pb_push_uint32( enc, 1U, instr->program_id );
-    fd_pb_push_bytes ( enc, 2U, fd_txn_get_instr_accts( instr, payload ), instr->acct_cnt );
-    fd_pb_push_bytes ( enc, 3U, fd_txn_get_instr_data ( instr, payload ), instr->data_sz  );
+  fd_pb_push_bool  ( enc, 3U, !txn_err );
+  fd_pb_push_uint64( enc, 4U, index );
+  fd_pb_push_bytes ( enc, 5U, payload, txnp->payload_sz );
+  for( ulong i=0UL;       i<loaded_wr;  i++ ) fd_pb_push_bytes( enc, 6U, loaded[ i ].b, 32UL );
+  for( ulong i=loaded_wr; i<loaded_cnt; i++ ) fd_pb_push_bytes( enc, 7U, loaded[ i ].b, 32UL );
+  if( txn_err ) {
+    fd_pb_submsg_open( enc, 8U );
+    fd_pb_push_int32 ( enc, 1U, txn_err );
+    if( trailer ) {
+      fd_pb_push_int32 ( enc, 2U, trailer->exec_err    [ trailer_idx ] );
+      fd_pb_push_uint32( enc, 3U, trailer->exec_err_idx[ trailer_idx ] );
+      fd_pb_push_uint32( enc, 4U, trailer->custom_err  [ trailer_idx ] );
+    }
     fd_pb_submsg_close( enc );
   }
   fd_pb_submsg_close( enc );
@@ -331,10 +391,10 @@ emit_txn( fd_grpc_tile_t *   ctx,
 static void
 emit_bundle( fd_grpc_tile_t *         ctx,
              fd_grpc_bundle_t const * bundle ) {
-  ulong mask = ctx->bundle_mask & ctx->sub_mask;
-  if( FD_LIKELY( !mask ) ) return;
+  ulong mask = ctx->sub_mask;
+  if( FD_UNLIKELY( !mask ) ) return;
 
-  if( FD_UNLIKELY( ctx->gap_cnt ) ) emit_gap( ctx );
+  flush_gaps( ctx, mask );
 
   uchar * out = fd_grpc_server_msg_stage( ctx->server, MSG_MAX );
   if( FD_UNLIKELY( !out ) ) return;
@@ -389,9 +449,9 @@ collect_bundle( fd_grpc_tile_t *                ctx,
   fd_txn_t const * txn = (fd_txn_t const *)txnp->_;
   memcpy( bundle->sigs[ i ], fd_txn_get_signatures( txn, txnp->payload ), 64UL );
   bundle->txn_err     [ i ] = -(int)( txnp->flags>>24 );
-  bundle->exec_err    [ i ] = trailer->exec_err;
-  bundle->exec_err_idx[ i ] = trailer->exec_err_idx;
-  bundle->custom_err  [ i ] = trailer->custom_err;
+  bundle->exec_err    [ i ] = trailer->exec_err    [ 0 ];
+  bundle->exec_err_idx[ i ] = trailer->exec_err_idx[ 0 ];
+  bundle->custom_err  [ i ] = trailer->custom_err  [ 0 ];
 
   if( bundle->idx==bundle->cnt ) {
     emit_bundle( ctx, bundle );
@@ -406,9 +466,16 @@ cb_request_start( void *       _ctx,
                   ulong        path_len ) {
   fd_grpc_tile_t * ctx = _ctx;
   if( FD_UNLIKELY( stream_idx>=ctx->max_sub ) ) return 0;
-  if( FD_UNLIKELY( path_len!=sizeof(SUBSCRIBE_PATH)-1UL ) ) return 0;
-  if( FD_UNLIKELY( memcmp( path, SUBSCRIBE_PATH, path_len ) ) ) return 0;
-  return 1;
+  ulong bit = 1UL<<stream_idx;
+  if( path_len==sizeof(SUBSCRIBE_PATH)-1UL && !memcmp( path, SUBSCRIBE_PATH, path_len ) ) {
+    ctx->leader_path_mask &= ~bit;
+    return 1;
+  }
+  if( path_len==sizeof(SUBSCRIBE_LEADER_PATH)-1UL && !memcmp( path, SUBSCRIBE_LEADER_PATH, path_len ) ) {
+    ctx->leader_path_mask |= bit;
+    return 1;
+  }
+  return 0;
 }
 
 static void
@@ -419,8 +486,13 @@ cb_request_msg( void *        _ctx,
   fd_grpc_tile_t * ctx = _ctx;
   ulong            bit = 1UL<<stream_idx;
 
-  if( FD_UNLIKELY( ctx->sub_mask & bit ) ) {
+  if( FD_UNLIKELY( ( ctx->sub_mask | ctx->leader_mask ) & bit ) ) {
     fd_grpc_server_stream_close( ctx->server, stream_idx, GRPC_STATUS_INVALID_ARGUMENT, "only one request permitted", 26UL );
+    return;
+  }
+
+  if( ctx->leader_path_mask & bit ) {
+    ctx->leader_mask |= bit;
     return;
   }
 
@@ -433,10 +505,7 @@ cb_request_msg( void *        _ctx,
   }
 
   fd_grpc_sub_t * sub = &ctx->sub[ stream_idx ];
-  sub->acct_cnt        = 0UL;
-  sub->include_votes   = (uchar)!!req->include_votes;
-  sub->include_failed  = (uchar)!!req->include_failed;
-  sub->include_bundles = (uchar)!!req->include_bundles;
+  sub->acct_cnt = 0UL;
 
   for( ulong i=0UL; i<req->accounts_count; i++ ) {
     if( FD_UNLIKELY( req->accounts[ i ].size!=32UL ) ) {
@@ -454,8 +523,9 @@ static void
 cb_request_fin( void * _ctx,
                 ulong  stream_idx ) {
   fd_grpc_tile_t * ctx = _ctx;
-  if( FD_UNLIKELY( !( ctx->sub_mask & (1UL<<stream_idx) ) ) ) {
-    fd_grpc_server_stream_close( ctx->server, stream_idx, GRPC_STATUS_INVALID_ARGUMENT, "missing SubscribeRequest", 24UL );
+  ulong            bit = 1UL<<stream_idx;
+  if( FD_UNLIKELY( !( ( ctx->sub_mask | ctx->leader_mask ) & bit ) ) ) {
+    fd_grpc_server_stream_close( ctx->server, stream_idx, GRPC_STATUS_INVALID_ARGUMENT, "missing request", 15UL );
   }
 }
 
@@ -466,6 +536,11 @@ cb_stream_close( void * _ctx,
   (void)reason;
   fd_grpc_tile_t * ctx = _ctx;
   ulong            bit = 1UL<<stream_idx;
+  ctx->leader_path_mask &= ~bit;
+  if( ctx->leader_mask & bit ) {
+    ctx->leader_mask &= ~bit;
+    if( !ctx->leader_mask ) ctx->leader_gap_cnt = 0UL;
+  }
   if( FD_LIKELY( ctx->sub_mask & bit ) ) {
     ctx->sub_mask &= ~bit;
     if( FD_UNLIKELY( !ctx->sub_mask ) ) ctx->gap_cnt = 0UL;
@@ -509,6 +584,7 @@ tile_ctx_init( void *                 scratch,
   void * _sub          = FD_SCRATCH_ALLOC_APPEND( l, alignof( fd_grpc_sub_t ),        tile->grpc.max_subscriptions*sizeof( fd_grpc_sub_t ) );
   void * _acct_map     = FD_SCRATCH_ALLOC_APPEND( l, alignof( fd_grpc_acct_entry_t ), acct_map_cnt( tile )*sizeof( fd_grpc_acct_entry_t )  );
   void * _bloom        = FD_SCRATCH_ALLOC_APPEND( l, 64UL,                            BLOOM_WORDS*sizeof( ulong )                          );
+  void * _alt          = FD_SCRATCH_ALLOC_APPEND( l, alignof( fd_grpc_alt_t ),        ALT_CACHE_CNT*sizeof( fd_grpc_alt_t )                );
   ulong  scratch_top   = FD_SCRATCH_ALLOC_FINI( l, scratch_align() );
 
   if( FD_UNLIKELY( scratch_top > (ulong)scratch + scratch_footprint( tile ) ) )
@@ -522,16 +598,23 @@ tile_ctx_init( void *                 scratch,
   ctx->bloom         = _bloom;
   ctx->max_sub       = tile->grpc.max_subscriptions;
 
-  ctx->sub_mask    = 0UL;
-  ctx->txn_mask    = 0UL;
-  ctx->vote_mask   = 0UL;
-  ctx->failed_mask = 0UL;
-  ctx->bundle_mask = 0UL;
+  ctx->alt             = _alt;
+  ctx->alt_pending_cnt = 0UL;
+  for( ulong i=0UL; i<ALT_CACHE_CNT; i++ ) {
+    ctx->alt[ i ].pack_txn_idx = ULONG_MAX;
+    ctx->alt[ i ].cnt          = 0UL;
+  }
 
-  ctx->last_slot  = 0UL;
-  ctx->txn_oversz = 0UL;
-  ctx->gap_cnt    = 0UL;
-  ctx->gap_total  = 0UL;
+  ctx->sub_mask         = 0UL;
+  ctx->txn_mask         = 0UL;
+  ctx->leader_mask      = 0UL;
+  ctx->leader_path_mask = 0UL;
+
+  ctx->last_slot      = 0UL;
+  ctx->gap_cnt        = 0UL;
+  ctx->leader_gap_cnt = 0UL;
+  ctx->gap_total      = 0UL;
+  ctx->alt_miss       = 0UL;
 
   memset( ctx->acct_map, 0, ctx->acct_map_cnt*sizeof( fd_grpc_acct_entry_t ) );
   memset( ctx->bloom,    0, BLOOM_WORDS*sizeof( ulong )                      );
@@ -560,11 +643,12 @@ unprivileged_init( fd_topo_t const *      topo,
     fd_topo_link_t const * link      = &topo->links[ tile->in_link_id[ i ] ];
     fd_topo_wksp_t const * link_wksp = &topo->workspaces[ topo->objs[ link->dcache_obj_id ].wksp_id ];
 
-    if     ( !strcmp( link->name, "replay_out" ) ) ctx->in[ i ].kind = IN_KIND_REPLAY;
-    else if( !strcmp( link->name, "execle_poh" ) ) ctx->in[ i ].kind = IN_KIND_EXECLE;
+    if     ( !strcmp( link->name, "replay_out"  ) ) ctx->in[ i ].kind = IN_KIND_REPLAY;
+    else if( !strcmp( link->name, "execle_poh"  ) ) ctx->in[ i ].kind = IN_KIND_EXECLE;
+    else if( !strcmp( link->name, "pack_execle" ) ) ctx->in[ i ].kind = IN_KIND_PACK;
     else FD_LOG_ERR(( "unexpected link name %s", link->name ));
 
-    FD_TEST( link->mtu<=sizeof( ctx->buf ) );
+    FD_TEST( ctx->in[ i ].kind==IN_KIND_PACK || link->mtu<=sizeof( ctx->buf ) );
     ctx->in[ i ].mem       = link_wksp->wksp;
     ctx->in[ i ].chunk0    = fd_dcache_compact_chunk0( ctx->in[ i ].mem, link->dcache );
     ctx->in[ i ].wmark     = fd_dcache_compact_wmark ( ctx->in[ i ].mem, link->dcache, link->mtu );
@@ -579,20 +663,21 @@ static void
 metrics_write( fd_grpc_tile_t * ctx ) {
   fd_grpc_server_metrics_t const * m = fd_grpc_server_metrics( ctx->server );
 
-  FD_MGAUGE_SET( GRPC, SUBSCRIPTION_COUNT, (ulong)fd_ulong_popcnt( ctx->sub_mask ) );
-  FD_MCNT_SET(   GRPC, CONN_ACCEPTED,      m->conn_accepted   );
-  FD_MCNT_SET(   GRPC, CONN_REJECTED,      m->conn_rejected   );
-  FD_MCNT_SET(   GRPC, CONN_ERR,           m->conn_err        );
-  FD_MCNT_SET(   GRPC, STREAM_OPENED,      m->stream_opened   );
-  FD_MCNT_SET(   GRPC, STREAM_REJECTED,    m->stream_rejected );
-  FD_MCNT_SET(   GRPC, STREAM_EVICTED,     m->stream_evicted  );
-  FD_MCNT_SET(   GRPC, MSG_STAGED,         m->msg_staged      );
-  FD_MCNT_SET(   GRPC, MSG_QUEUED,         m->msg_queued      );
-  FD_MCNT_SET(   GRPC, MSG_DROPPED,        m->msg_dropped     );
-  FD_MCNT_SET(   GRPC, MSG_ABANDONED,      m->msg_abandoned   );
-  FD_MCNT_SET(   GRPC, TXN_OVERSZ,         ctx->txn_oversz    );
-  FD_MCNT_SET(   GRPC, BYTES_TX,           m->bytes_tx        );
-  FD_MCNT_SET(   GRPC, FRAGS_DROPPED,      ctx->gap_total     );
+  FD_MGAUGE_SET( GRPC, SUBSCRIPTION_COUNT,        (ulong)fd_ulong_popcnt( ctx->sub_mask    ) );
+  FD_MGAUGE_SET( GRPC, LEADER_SUBSCRIPTION_COUNT, (ulong)fd_ulong_popcnt( ctx->leader_mask ) );
+  FD_MCNT_SET(   GRPC, CONN_ACCEPTED,             m->conn_accepted   );
+  FD_MCNT_SET(   GRPC, CONN_REJECTED,             m->conn_rejected   );
+  FD_MCNT_SET(   GRPC, CONN_ERR,                  m->conn_err        );
+  FD_MCNT_SET(   GRPC, STREAM_OPENED,             m->stream_opened   );
+  FD_MCNT_SET(   GRPC, STREAM_REJECTED,           m->stream_rejected );
+  FD_MCNT_SET(   GRPC, STREAM_EVICTED,            m->stream_evicted  );
+  FD_MCNT_SET(   GRPC, MSG_STAGED,                m->msg_staged      );
+  FD_MCNT_SET(   GRPC, MSG_QUEUED,                m->msg_queued      );
+  FD_MCNT_SET(   GRPC, MSG_DROPPED,               m->msg_dropped     );
+  FD_MCNT_SET(   GRPC, MSG_ABANDONED,             m->msg_abandoned   );
+  FD_MCNT_SET(   GRPC, BYTES_TX,                  m->bytes_tx        );
+  FD_MCNT_SET(   GRPC, FRAGS_DROPPED,             ctx->gap_total     );
+  FD_MCNT_SET(   GRPC, ALT_MISS,                  ctx->alt_miss      );
 }
 
 static void
@@ -618,14 +703,20 @@ before_frag( fd_grpc_tile_t * ctx,
     in->seq_valid = 1;
   } else if( FD_UNLIKELY( seq!=in->next_seq ) ) {
     ulong missed = (ulong)fd_seq_diff( seq, in->next_seq );
-    if( FD_LIKELY( ctx->sub_mask ) ) ctx->gap_cnt += missed;
     ctx->gap_total += missed;
+    if( FD_LIKELY( in->kind!=IN_KIND_PACK ) ) {
+      if( FD_LIKELY( ctx->sub_mask ) ) ctx->gap_cnt += missed;
+      if( in->kind==IN_KIND_EXECLE && ctx->leader_mask ) ctx->leader_gap_cnt += missed;
+    }
   }
   in->next_seq = fd_seq_inc( seq, 1UL );
 
-  if( FD_LIKELY( !ctx->txn_mask && !ctx->bundle_mask ) ) return 1;
-  if( in->kind==IN_KIND_REPLAY ) return sig!=REPLAY_SIG_TXN_EXECUTED || !ctx->txn_mask;
-  return 0;
+  switch( in->kind ) {
+    case IN_KIND_REPLAY: return !ctx->txn_mask || sig!=REPLAY_SIG_TXN_EXECUTED;
+    case IN_KIND_EXECLE: return !ctx->sub_mask && !ctx->leader_mask;
+    case IN_KIND_PACK:   return ( !ctx->txn_mask && !ctx->leader_mask ) || fd_disco_poh_sig_pkt_type( sig )!=POH_PKT_TYPE_MICROBLOCK;
+    default:             return 1;
+  }
 }
 
 static void
@@ -638,10 +729,13 @@ during_frag( fd_grpc_tile_t * ctx,
              ulong            ctl FD_PARAM_UNUSED ) {
   fd_grpc_in_t const * in = &ctx->in[ in_idx ];
   if( FD_UNLIKELY( chunk<in->chunk0 || chunk>in->wmark || sz>in->mtu ||
-                   ( in->kind==IN_KIND_EXECLE && sz<sizeof(fd_microblock_trailer_t) ) ) ) {
+                   ( in->kind==IN_KIND_EXECLE && sz<sizeof(fd_microblock_trailer_t)        ) ||
+                   ( in->kind==IN_KIND_PACK   && sz<sizeof(fd_microblock_execle_trailer_t) ) ) ) {
     FD_LOG_ERR(( "chunk %lu sz %lu out of bounds [%lu,%lu]", chunk, sz, in->chunk0, in->wmark ));
   }
-  memcpy( ctx->buf, fd_chunk_to_laddr_const( in->mem, chunk ), sz );
+  uchar const * src = fd_chunk_to_laddr_const( in->mem, chunk );
+  if( in->kind==IN_KIND_PACK ) alt_stage( ctx, src, sz );
+  else                         memcpy( ctx->buf, src, sz );
 }
 
 static void
@@ -658,23 +752,26 @@ after_frag( fd_grpc_tile_t *    ctx,
       if( FD_UNLIKELY( sig!=REPLAY_SIG_TXN_EXECUTED ) ) break;
       fd_replay_txn_executed_t const * exec = &ctx->buf->replay.txn_executed;
       ctx->last_slot = exec->slot;
-      emit_txn( ctx, exec->slot, exec->txn, exec->txn_err );
+      emit_txn( ctx, exec->slot, exec->index_in_slot, exec->txn, exec->txn_err, NULL, 0UL, 0UL );
       break;
     }
     case IN_KIND_EXECLE: {
       ctx->last_slot = fd_disco_execle_sig_slot( sig );
       ulong txn_cnt = ( sz-sizeof(fd_microblock_trailer_t) )/sizeof(fd_txn_p_t);
       fd_microblock_trailer_t const * trailer = (fd_microblock_trailer_t const *)( ctx->buf->raw + sz - sizeof(fd_microblock_trailer_t) );
-      if( ctx->bundle_mask && txn_cnt==1UL && trailer->bundle_cnt ) {
+      if( ctx->sub_mask && txn_cnt==1UL && trailer->bundle_cnt ) {
         collect_bundle( ctx, &ctx->in[ in_idx ], ctx->last_slot, ctx->buf->txns, trailer );
       }
       for( ulong i=0UL; i<txn_cnt; i++ ) {
         fd_txn_p_t const * txnp = &ctx->buf->txns[ i ];
         if( !( txnp->flags & FD_TXN_P_FLAGS_EXECUTE_SUCCESS ) ) continue;
-        emit_txn( ctx, ctx->last_slot, txnp, -(int)( txnp->flags>>24 ) );
+        emit_txn( ctx, ctx->last_slot, trailer->pack_txn_idx+i, txnp, -(int)( txnp->flags>>24 ), trailer, i, ctx->leader_mask );
       }
       break;
     }
+    case IN_KIND_PACK:
+      alt_commit( ctx );
+      break;
     default:
       break;
   }

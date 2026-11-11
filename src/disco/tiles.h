@@ -148,17 +148,17 @@ struct fd_microblock_trailer {
   long exec_start_ticks;
   long exec_end_ticks;
 
-  /* Set on the one-transaction microblocks a bundle is published as:
-     the transaction's position in the bundle and the bundle's size,
-     and the instruction error that failed it (FD_EXECUTOR_INSTR_ERR_*,
-     its instruction index and the program's custom error code), zero
-     when no instruction failed.  bundle_cnt is 0 for every other
-     microblock. */
+  /* bundle_idx and bundle_cnt are set on the one-transaction
+     microblocks a bundle is published as: the transaction's position in
+     the bundle and the bundle's size.  bundle_cnt is 0 for every other
+     microblock.  Per transaction, the instruction error that failed it
+     (FD_EXECUTOR_INSTR_ERR_*, its instruction index and the program's
+     custom error code), zero when no instruction failed. */
   uchar bundle_idx;
   uchar bundle_cnt;
-  uchar exec_err_idx;
-  schar exec_err;
-  uint  custom_err;
+  uchar exec_err_idx[ MAX_TXN_PER_MICROBLOCK ];
+  schar exec_err    [ MAX_TXN_PER_MICROBLOCK ];
+  uint  custom_err  [ MAX_TXN_PER_MICROBLOCK ];
 };
 typedef struct fd_microblock_trailer fd_microblock_trailer_t;
 

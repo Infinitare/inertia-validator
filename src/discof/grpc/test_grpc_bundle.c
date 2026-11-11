@@ -100,10 +100,8 @@ test_ctx_new( void ** scratch_out ) {
 
 static void
 test_subscribe( fd_grpc_tile_t * ctx,
-                ulong            stream_idx,
-                int              include_bundles ) {
-  uchar const req[] = { 0x20, 0x01 };
-  cb_request_msg( ctx, stream_idx, req, include_bundles ? sizeof(req) : 0UL );
+                ulong            stream_idx ) {
+  cb_request_msg( ctx, stream_idx, NULL, 0UL );
   FD_TEST( ctx->sub_mask & (1UL<<stream_idx) );
 }
 
@@ -151,9 +149,9 @@ test_feed_bundle( fd_grpc_tile_t *      ctx,
       .pack_txn_idx = pack_txn_idx0+i,
       .bundle_idx   = (uchar)i,
       .bundle_cnt   = (uchar)cnt,
-      .exec_err     = (schar)members[ i ].exec_err,
-      .exec_err_idx = (uchar)members[ i ].exec_err_idx,
-      .custom_err   = members[ i ].custom_err
+      .exec_err     = { (schar)members[ i ].exec_err     },
+      .exec_err_idx = { (uchar)members[ i ].exec_err_idx },
+      .custom_err   = { members[ i ].custom_err          }
     };
     test_feed( ctx, in_idx, seq++, txn, 1UL, &trailer );
   }
@@ -302,22 +300,39 @@ static test_member_t const next3[ 3 ] = {
 FD_UNIT_TEST( grpc_bundle_landed ) {
   void * scratch;
   fd_grpc_tile_t * ctx = test_ctx_new( &scratch );
-  test_subscribe( ctx, 0UL, 1 );
-  test_subscribe( ctx, 1UL, 0 );
-  FD_TEST( ctx->bundle_mask==1UL );
+  test_subscribe( ctx, 0UL );
+  test_subscribe( ctx, 1UL );
 
   test_feed_bundle( ctx, 0UL, 0UL, 40UL, landed3, 3UL, 0UL, 2UL );
   FD_TEST( test_out_cnt==0UL );
   test_feed_bundle( ctx, 0UL, 2UL, 40UL, landed3, 3UL, 2UL, 3UL );
   FD_TEST( test_out_cnt==1UL );
-  test_check_bundle( 0UL, 1UL, 1, landed3, 3UL );
+  test_check_bundle( 0UL, 3UL, 1, landed3, 3UL );
+  free( scratch );
+}
+
+FD_UNIT_TEST( grpc_bundle_not_for_leader_subscribers ) {
+  void * scratch;
+  fd_grpc_tile_t * ctx = test_ctx_new( &scratch );
+  ctx->leader_mask = 1UL<<1;
+
+  test_feed_bundle( ctx, 0UL, 0UL, 40UL, landed3, 3UL, 0UL, 3UL );
+  FD_TEST( test_out_cnt==3UL );
+  for( ulong i=0UL; i<3UL; i++ ) {
+    FD_TEST( test_out[ i ].mask==(1UL<<1) );
+    fd_pb_inbuf_t in[ 1 ];
+    fd_pb_inbuf_init( in, test_out[ i ].buf, test_out[ i ].sz );
+    fd_pb_tlv_t tlv[ 1 ];
+    FD_TEST( fd_pb_read_tlv( in, tlv ) );
+    FD_TEST( tlv->field_id==UPDATE_FIELD_TXN );
+  }
   free( scratch );
 }
 
 FD_UNIT_TEST( grpc_bundle_failed ) {
   void * scratch;
   fd_grpc_tile_t * ctx = test_ctx_new( &scratch );
-  test_subscribe( ctx, 2UL, 1 );
+  test_subscribe( ctx, 2UL );
 
   test_member_t const failed[ 3 ] = {
     { .tag=0x11, .txn_err=FD_RUNTIME_TXN_ERR_BUNDLE_PEER },
@@ -334,7 +349,7 @@ FD_UNIT_TEST( grpc_bundle_failed ) {
 FD_UNIT_TEST( grpc_bundle_single ) {
   void * scratch;
   fd_grpc_tile_t * ctx = test_ctx_new( &scratch );
-  test_subscribe( ctx, 0UL, 1 );
+  test_subscribe( ctx, 0UL );
 
   test_feed_bundle( ctx, 0UL, 0UL, 5UL, landed3, 1UL, 0UL, 1UL );
   FD_TEST( test_out_cnt==1UL );
@@ -345,7 +360,7 @@ FD_UNIT_TEST( grpc_bundle_single ) {
 FD_UNIT_TEST( grpc_bundle_ignores_microblocks ) {
   void * scratch;
   fd_grpc_tile_t * ctx = test_ctx_new( &scratch );
-  test_subscribe( ctx, 0UL, 1 );
+  test_subscribe( ctx, 0UL );
 
   fd_txn_p_t txns[ 3 ];
   for( ulong i=0UL; i<3UL; i++ ) test_make_txn( &txns[ i ], &landed3[ i ] );
@@ -364,12 +379,10 @@ FD_UNIT_TEST( grpc_bundle_requires_subscriber ) {
   void * scratch;
   fd_grpc_tile_t * ctx = test_ctx_new( &scratch );
   FD_TEST( before_frag( ctx, 0UL, 0UL, fd_disco_execle_sig( TEST_SLOT, 0UL ) )==1 );
-
-  test_subscribe( ctx, 0UL, 0 );
   test_feed_bundle( ctx, 0UL, 1UL, 4UL, landed3, 3UL, 0UL, 3UL );
   FD_TEST( test_out_cnt==0UL );
 
-  test_subscribe( ctx, 1UL, 1 );
+  test_subscribe( ctx, 1UL );
   FD_TEST( before_frag( ctx, 0UL, 4UL, fd_disco_execle_sig( TEST_SLOT, 0UL ) )==0 );
   FD_TEST( before_frag( ctx, 2UL, 0UL, REPLAY_SIG_TXN_EXECUTED )==1 );
   free( scratch );
@@ -378,7 +391,7 @@ FD_UNIT_TEST( grpc_bundle_requires_subscriber ) {
 FD_UNIT_TEST( grpc_bundle_overrun_no_splice ) {
   void * scratch;
   fd_grpc_tile_t * ctx = test_ctx_new( &scratch );
-  test_subscribe( ctx, 0UL, 1 );
+  test_subscribe( ctx, 0UL );
 
   test_feed_bundle( ctx, 0UL, 0UL, 10UL, landed3, 3UL, 0UL, 2UL );
   test_feed_bundle( ctx, 0UL, 5UL, 20UL, other3,  3UL, 2UL, 3UL );
@@ -394,15 +407,15 @@ FD_UNIT_TEST( grpc_bundle_overrun_no_splice ) {
 FD_UNIT_TEST( grpc_bundle_resubscribe_no_splice ) {
   void * scratch;
   fd_grpc_tile_t * ctx = test_ctx_new( &scratch );
-  test_subscribe( ctx, 0UL, 1 );
+  test_subscribe( ctx, 0UL );
 
   ulong seq = test_feed_bundle( ctx, 0UL, 0UL, 10UL, landed3, 3UL, 0UL, 2UL );
   cb_stream_close( ctx, 0UL, 0 );
-  FD_TEST( !ctx->bundle_mask );
+  FD_TEST( !ctx->sub_mask );
   seq = test_feed_bundle( ctx, 0UL, seq, 10UL, landed3, 3UL, 2UL, 3UL );
   seq = test_feed_bundle( ctx, 0UL, seq, 20UL, other3,  3UL, 0UL, 2UL );
 
-  test_subscribe( ctx, 1UL, 1 );
+  test_subscribe( ctx, 1UL );
   seq = test_feed_bundle( ctx, 0UL, seq, 20UL, other3, 3UL, 2UL, 3UL );
   FD_TEST( test_out_cnt==0UL );
 
@@ -415,7 +428,7 @@ FD_UNIT_TEST( grpc_bundle_resubscribe_no_splice ) {
 FD_UNIT_TEST( grpc_bundle_per_link ) {
   void * scratch;
   fd_grpc_tile_t * ctx = test_ctx_new( &scratch );
-  test_subscribe( ctx, 0UL, 1 );
+  test_subscribe( ctx, 0UL );
 
   test_feed_bundle( ctx, 0UL, 0UL, 10UL, landed3, 2UL, 0UL, 1UL );
   test_feed_bundle( ctx, 1UL, 0UL, 20UL, other3,  2UL, 0UL, 1UL );
