@@ -396,6 +396,16 @@ typedef struct fd_bundle_tile fd_bundle_tile_t;
 /* Leader window info submission */
 #define FD_BUNDLE_CLIENT_REQ_SubmitLeaderWindowInfo             8
 
+/* FD_BUNDLE_INERTIA_PROTOCOL is the version of the interface between
+   this validator and inertia-tpu (the inertia.v1.Stream service and
+   the bundle semantics it relies on).  It is sent as "inertia/<n>" in
+   the user-agent of every block engine and TPU endpoint request.
+   inertia-tpu rejects a validator whose protocol differs from its own,
+   so that validator keeps advertising its own TPU and produces blocks
+   without it.  Bump it together with fork::PROTOCOL in inertia-tpu on
+   every incompatible change, e.g. to stream.proto. */
+#define FD_BUNDLE_INERTIA_PROTOCOL (1UL)
+
 /* TPU endpoint request context IDs */
 #define FD_BUNDLE_CLIENT_REQ_SubscribePacketsTPU                9
 #define FD_BUNDLE_CLIENT_REQ_GetTpuConfigs                      10

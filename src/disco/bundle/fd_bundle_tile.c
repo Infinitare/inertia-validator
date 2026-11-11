@@ -927,7 +927,11 @@ unprivileged_init( fd_topo_t const *      topo,
   if( FD_UNLIKELY( !ctx->grpc_client ) ) {
     FD_LOG_CRIT(( "fd_grpc_client_new failed" )); /* unreachable */
   }
-  fd_grpc_client_set_version( ctx->grpc_client, fd_version_cstr, strlen( fd_version_cstr ) );
+  char  version[ FD_GRPC_CLIENT_VERSION_LEN_MAX+1UL ];
+  ulong version_len;
+  fd_cstr_printf( version, sizeof(version), &version_len, "%s inertia/%lu", fd_version_cstr, FD_BUNDLE_INERTIA_PROTOCOL );
+
+  fd_grpc_client_set_version( ctx->grpc_client, version, version_len );
   fd_grpc_client_set_authority( ctx->grpc_client, ctx->server_sni, ctx->server_sni_len, ctx->server_tcp_port );
 
   /* Initialize TPU endpoint if configured */
@@ -939,7 +943,7 @@ unprivileged_init( fd_topo_t const *      topo,
     if( FD_UNLIKELY( !ctx->tpu_grpc_client ) ) {
       FD_LOG_CRIT(( "fd_grpc_client_new for TPU endpoint failed" )); /* unreachable */
     }
-    fd_grpc_client_set_version( ctx->tpu_grpc_client, fd_version_cstr, strlen( fd_version_cstr ) );
+    fd_grpc_client_set_version( ctx->tpu_grpc_client, version, version_len );
     fd_grpc_client_set_authority( ctx->tpu_grpc_client, ctx->tpu_server_sni, ctx->tpu_server_sni_len, ctx->tpu_server_tcp_port );
 
     FD_LOG_NOTICE(( "TPU bundle endpoint configured: %.*s", (int)ctx->tpu_server_fqdn_len, ctx->tpu_server_fqdn ));
