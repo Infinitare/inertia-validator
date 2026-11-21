@@ -1,6 +1,7 @@
 #include "fd_verify_tile.h"
 #include "../fd_txn_m.h"
 #include "../metrics/fd_metrics.h"
+#include "../../util/pod/fd_pod.h"
 #include <linux/futex.h>
 #include "generated/fd_verify_tile_seccomp.h"
 #include "../../flamenco/gossip/fd_gossip_message.h"
@@ -137,6 +138,13 @@ after_frag( fd_verify_ctx_t *   ctx,
     return;
   }
 
+  if( FD_UNLIKELY( ctx->in_kind[ in_idx ]==IN_KIND_QUIC && ctx->relayer_lease &&
+                   (long)fd_fseq_query( ctx->relayer_lease )>fd_tickcount() &&
+                   !fd_txn_is_simple_vote_transaction( txnt, fd_txn_m_payload( txnm ) ) ) ) {
+    ctx->metrics.verify_tile_result[ FD_METRICS_ENUM_VERIFY_RESULT_V_RELAYER_ONLY_IDX ]++;
+    return;
+  }
+
   /* Users sometimes send transactions as part of a bundle (with a tip)
      and via the normal path (without a tip).  Regardless of which
      arrives first, we want to pack the one with the tip.  Thus, we
@@ -197,6 +205,13 @@ unprivileged_init( fd_topo_t const *      topo,
 
   ctx->bundle_failed = 0;
   ctx->bundle_id     = 0UL;
+
+  ulong relayer_lease_obj_id = fd_pod_query_ulong( topo->props, "relayer_lease", ULONG_MAX );
+  ctx->relayer_lease = NULL;
+  if( FD_UNLIKELY( relayer_lease_obj_id!=ULONG_MAX ) ) {
+    ctx->relayer_lease = fd_fseq_join( fd_topo_obj_laddr( topo, relayer_lease_obj_id ) );
+    if( FD_UNLIKELY( !ctx->relayer_lease ) ) FD_LOG_ERR(( "verify tile has no relayer lease" ));
+  }
 
   memset( &ctx->metrics, 0, sizeof( ctx->metrics ) );
 

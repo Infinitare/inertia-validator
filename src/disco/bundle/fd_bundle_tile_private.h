@@ -326,6 +326,9 @@ struct fd_bundle_tile {
     ulong       wmark;
   } replay_in;
 
+  ulong * relayer_lease;
+  long    relayer_lease_ticks;
+
   /* TPU status for gossip updates */
   uchar tpu_status_recent;  /* most recently observed TPU status */
   uchar tpu_status_gossip;  /* last TPU status sent to gossip link */
@@ -405,6 +408,8 @@ typedef struct fd_bundle_tile fd_bundle_tile_t;
    without it.  Bump it together with fork::PROTOCOL in inertia-tpu on
    every incompatible change, e.g. to stream.proto. */
 #define FD_BUNDLE_INERTIA_PROTOCOL (1UL)
+
+#define FD_BUNDLE_RELAYER_LEASE_NS (2000000000L)
 
 /* TPU endpoint request context IDs */
 #define FD_BUNDLE_CLIENT_REQ_SubscribePacketsTPU                9

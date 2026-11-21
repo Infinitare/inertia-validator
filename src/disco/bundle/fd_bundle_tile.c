@@ -147,6 +147,12 @@ metrics_write( fd_bundle_tile_t * ctx ) {
   FD_MGAUGE_SET( BUNDLE, TPU_CONN_STATE, fd_ulong_if( ctx->sleep_mode, FD_BUNDLE_STATE_SLEEPING, (ulong)tpu_status ) );
   ctx->tpu_status_recent = (uchar)tpu_status;
 
+  if( FD_LIKELY( ctx->relayer_lease ) ) {
+    int   relayed  = tpu_status==FD_BUNDLE_STATE_CONNECTED && !ctx->sleep_mode;
+    ulong deadline = (ulong)( fd_tickcount() + ctx->relayer_lease_ticks );
+    fd_fseq_update( ctx->relayer_lease, fd_ulong_if( relayed, deadline, 0UL ) );
+  }
+
   FD_MCNT_SET( BUNDLE, TPU_TXN_RX,                            ctx->metrics.tpu_txn_received_cnt        );
   FD_MCNT_SET( BUNDLE, LEADER_WINDOW_REQUEST_TX,              ctx->metrics.leader_window_submitted_cnt );
   FD_MCNT_SET( BUNDLE, LEADER_WINDOW_REQUEST_FAILED,          ctx->metrics.leader_window_failed_cnt    );
@@ -922,6 +928,15 @@ unprivileged_init( fd_topo_t const *      topo,
   ctx->strategy_seq                = 0UL;
   ctx->strategy_seq_applied        = 0UL;
   ctx->tpu_status_recent = FD_BUNDLE_STATE_DISCONNECTED;
+
+  ulong relayer_lease_obj_id = fd_pod_query_ulong( topo->props, "relayer_lease", ULONG_MAX );
+  ctx->relayer_lease       = NULL;
+  ctx->relayer_lease_ticks = (long)( fd_tempo_tick_per_ns( NULL )*(double)FD_BUNDLE_RELAYER_LEASE_NS );
+  if( FD_LIKELY( relayer_lease_obj_id!=ULONG_MAX ) ) {
+    ctx->relayer_lease = fd_fseq_join( fd_topo_obj_laddr( topo, relayer_lease_obj_id ) );
+    if( FD_UNLIKELY( !ctx->relayer_lease ) ) FD_LOG_ERR(( "bundle tile has no relayer lease" ));
+    fd_fseq_update( ctx->relayer_lease, 0UL );
+  }
 
   ctx->grpc_client = fd_grpc_client_new( ctx->grpc_client_mem, &fd_bundle_client_grpc_callbacks, ctx->grpc_metrics, ctx, ctx->grpc_buf_max, ctx->map_seed );
   if( FD_UNLIKELY( !ctx->grpc_client ) ) {
